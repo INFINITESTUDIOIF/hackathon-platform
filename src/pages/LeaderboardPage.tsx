@@ -46,6 +46,7 @@ export function LeaderboardPage() {
       setAwaitingRows([])
       return
     }
+    setMerged([])
     let cancelled = false
     void (async () => {
       try {
@@ -81,9 +82,9 @@ export function LeaderboardPage() {
           }
         })
         next.sort((a, b) => (b.score ?? 0) - (a.score ?? 0))
-        if (!cancelled) setMerged(next.length ? next : PROJECTS)
+        if (!cancelled) setMerged(next)
       } catch {
-        if (!cancelled) setMerged(PROJECTS)
+        if (!cancelled) setMerged([])
       }
     })()
     return () => {
@@ -213,12 +214,6 @@ export function LeaderboardPage() {
 
       {(canSeeLeaderboard || isAdmin) && (
         <>
-          {winnerAnnouncedAt && (
-            <div className="relative z-20 mb-2 rounded-xl border border-violet-500/30 bg-violet-900/20 px-4 py-3 text-sm text-violet-100">
-              Winners announced — full results are available to those with access.
-            </div>
-          )}
-
           {first && (
             <div className="relative z-10 mt-6 mb-12 flex flex-col items-center gap-4 sm:flex-row sm:items-stretch sm:justify-center sm:gap-5">
               {[
@@ -229,7 +224,7 @@ export function LeaderboardPage() {
                   icon: Medal,
                   iconClass: 'text-slate-200',
                   card: 'border-slate-400/35 bg-gradient-to-b from-slate-700/50 via-zinc-900 to-zinc-950 sm:order-1',
-                  lift: '',
+                  lift: 'sm:translate-y-5 sm:scale-[1.0]',
                 },
                 {
                   p: first,
@@ -238,7 +233,7 @@ export function LeaderboardPage() {
                   icon: Trophy,
                   iconClass: 'text-amber-300',
                   card: 'order-first border-amber-400/55 bg-gradient-to-b from-amber-950/90 via-zinc-900 to-zinc-950 shadow-[0_0_50px_rgba(251,191,36,0.2)] sm:order-2',
-                  lift: 'sm:scale-[1.02]',
+                  lift: 'sm:-translate-y-1 sm:scale-[1.03]',
                 },
                 {
                   p: third,
@@ -247,7 +242,7 @@ export function LeaderboardPage() {
                   icon: Medal,
                   iconClass: 'text-amber-700',
                   card: 'border-orange-700/40 bg-gradient-to-b from-orange-950/55 via-zinc-900 to-zinc-950 sm:order-3',
-                  lift: '',
+                  lift: 'sm:translate-y-6 sm:scale-[1.0]',
                 },
               ].map(
                 ({ p, label, sub, icon: Icon, iconClass, card, lift }) =>

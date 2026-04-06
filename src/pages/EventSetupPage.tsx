@@ -1,5 +1,5 @@
 import { ArrowLeft, Upload } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { useState } from 'react'
 import { useApp } from '../context/AppContext'
 import { saveCurrentEventMongo } from '../services/mongoApi'
@@ -8,6 +8,7 @@ import { TrackManager } from '../components/admin/TrackManager'
 import { Button } from '../components/ui/Button'
 
 export function EventSetupPage() {
+  const navigate = useNavigate()
   const { eventSetup, setEventSetup, updateRubric, updateTracks, useApiBackend } =
     useApp()
   const [saveMsg, setSaveMsg] = useState<string | null>(null)
@@ -176,6 +177,39 @@ export function EventSetupPage() {
         </section>
 
         <section className="surface-card rounded-[var(--radius-lg)] p-6 sm:p-8">
+          <h2 className="text-lg font-semibold text-zinc-100">Scoring mode</h2>
+          <p className="mt-1 text-sm text-zinc-400">
+            Choose primary judging style for this event.
+          </p>
+          <div className="mt-6 flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() =>
+                setEventSetup((p) => ({ ...p, scoringMode: 'rubric' }))
+              }
+              className={`rounded-xl px-4 py-3 text-sm font-medium ring-1 transition ${
+                e.scoringMode === 'rubric'
+                  ? 'bg-violet-600 text-white ring-violet-500'
+                  : 'bg-zinc-800 text-zinc-200 ring-zinc-600 hover:bg-zinc-700'
+              }`}
+            >
+              Rubric (sliders)
+            </button>
+            <button
+              type="button"
+              onClick={() => setEventSetup((p) => ({ ...p, scoringMode: 'stars' }))}
+              className={`rounded-xl px-4 py-3 text-sm font-medium ring-1 transition ${
+                e.scoringMode === 'stars'
+                  ? 'bg-violet-600 text-white ring-violet-500'
+                  : 'bg-zinc-800 text-zinc-200 ring-zinc-600 hover:bg-zinc-700'
+              }`}
+            >
+              Star rating
+            </button>
+          </div>
+        </section>
+
+        <section className="surface-card rounded-[var(--radius-lg)] p-6 sm:p-8">
           <RubricBuilder
             rubric={e.rubric}
             onChange={(rubric) => updateRubric(rubric)}
@@ -201,7 +235,12 @@ export function EventSetupPage() {
               if (useApiBackend) {
                 setSaving(true)
                 void saveCurrentEventMongo(eventSetup)
-                  .then(() => setSaveMsg('Event saved to database.'))
+                  .then(() => setSaveMsg('Event created in database.'))
+                  .then(() =>
+                    window.setTimeout(() => {
+                      navigate('/admin', { replace: true })
+                    }, 900),
+                  )
                   .catch(() => setSaveMsg('Could not save — check API connection.'))
                   .finally(() => setSaving(false))
               } else {
@@ -209,7 +248,7 @@ export function EventSetupPage() {
               }
             }}
           >
-            {saving ? 'Saving…' : 'Save event'}
+            {saving ? 'Creating event…' : 'Create event'}
           </Button>
         </div>
       </div>

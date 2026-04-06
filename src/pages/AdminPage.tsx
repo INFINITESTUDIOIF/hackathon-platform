@@ -1,5 +1,4 @@
 import {
-  BellRing,
   Plus,
   Settings2,
   Trophy,
@@ -40,7 +39,6 @@ export function AdminPage() {
     useApiBackend,
     refreshFeed,
   } = useApp()
-  const [scoringMode, setScoringMode] = useState<'rubric' | 'stars'>('rubric')
   const [newAdminEmail, setNewAdminEmail] = useState('')
   const [newJudgeEmail, setNewJudgeEmail] = useState('')
   const [adminMsg, setAdminMsg] = useState<string | null>(null)
@@ -183,14 +181,7 @@ export function AdminPage() {
         </div>
       </header>
 
-      {winnerAnnouncedAt && (
-        <div className="mb-8 rounded-2xl border border-violet-400/30 bg-violet-950/30 px-4 py-3 text-sm text-violet-100 shadow-[0_0_24px_rgba(124,58,237,0.24)]">
-          <p className="flex items-center gap-2 font-medium">
-            <BellRing className="h-4 w-4" />
-            Winners announced successfully. Leaderboard is now public.
-          </p>
-        </div>
-      )}
+      {/* Winner toast is handled globally in AppShell (3s animated). */}
 
       {useApiBackend && emailStats && (
         <section className="mb-8 surface-card rounded-[var(--radius-lg)] p-6">
@@ -331,33 +322,18 @@ export function AdminPage() {
         </section>
 
         <section className="surface-card rounded-[var(--radius-lg)] p-6">
-          <h2 className="text-lg font-semibold text-zinc-100">Scoring system</h2>
+          <h2 className="text-lg font-semibold text-zinc-100">Scoring setup</h2>
           <p className="mt-1 text-sm text-zinc-400">
-            Toggle primary judging mode for judge UI emphasis.
+            Scoring mode is now configured in Event setup, so each event can define its
+            own judging style.
           </p>
-          <div className="mt-6 flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={() => setScoringMode('rubric')}
-              className={`rounded-xl px-4 py-3 text-sm font-medium ring-1 transition ${
-                scoringMode === 'rubric'
-                  ? 'bg-violet-600 text-white ring-violet-500'
-                  : 'bg-zinc-800 text-zinc-200 ring-zinc-600 hover:bg-zinc-700'
-              }`}
+          <div className="mt-6">
+            <Link
+              to="/admin/event-setup"
+              className="text-sm font-medium text-violet-400 hover:underline"
             >
-              Rubric (sliders)
-            </button>
-            <button
-              type="button"
-              onClick={() => setScoringMode('stars')}
-              className={`rounded-xl px-4 py-3 text-sm font-medium ring-1 transition ${
-                scoringMode === 'stars'
-                  ? 'bg-violet-600 text-white ring-violet-500'
-                  : 'bg-zinc-800 text-zinc-200 ring-zinc-600 hover:bg-zinc-700'
-              }`}
-            >
-              Star rating
-            </button>
+              Open Event setup to change scoring mode →
+            </Link>
           </div>
         </section>
       </div>

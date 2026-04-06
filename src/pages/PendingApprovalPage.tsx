@@ -5,12 +5,12 @@ import { useApp } from '../context/AppContext'
 
 export function PendingApprovalPage() {
   const navigate = useNavigate()
-  const { profile, logout, supabaseMode } = useApp()
+  const { profile, logout, supabaseMode, useApiBackend } = useApp()
 
   useEffect(() => {
-    if (!supabaseMode || !profile) return
+    if ((!supabaseMode && !useApiBackend) || !profile) return
     if (profile.approval_status === 'approved') navigate('/', { replace: true })
-  }, [supabaseMode, profile, navigate])
+  }, [supabaseMode, useApiBackend, profile, navigate])
 
   return (
     <div className="mx-auto flex min-h-[70vh] max-w-lg flex-col items-center justify-center px-4 py-16 text-center">

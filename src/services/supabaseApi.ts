@@ -10,6 +10,10 @@ export type ProfileRow = {
   role: 'admin' | 'judge' | 'team'
   team_id: string | null
   approval_status: 'pending' | 'approved' | 'rejected'
+  /** API mode only (Mongo users). */
+  google_verified?: boolean
+  /** API mode only (Mongo users). */
+  password_set?: boolean
 }
 
 type ProjectRow = {

@@ -56,6 +56,7 @@ async function run() {
       judgingStart: '2026-04-02',
       winnerAnnouncement: '2026-04-03',
       autoLock: true,
+      scoringMode: 'rubric',
       rubric: defaultRubric,
       tracks: ['FinTech', 'Healthcare', 'AI/ML', 'DevTools', 'Sustainability', 'Web Dev', 'App Dev', 'Blockchain'],
     })
@@ -211,7 +212,15 @@ async function seedDemoAccounts(event) {
     [18, 'Cloud Crew', 'EventHub', 'Campus events + RSVPs.', 6.2],
   ]
 
-  for (const [num, tname, ptitle, ptag, total] of extraTeams) {
+  // Match the “polished demo” leaderboard names so Admin/Judge/Leaderboard are identical in DB mode.
+  const showcase = [
+    [111, 'Vector Labs', 'SynthMarket — v24', 'Composable markets with clean UX.', 9.5],
+    [112, 'Mint Collective', 'Ledgerly — v14', 'Real-time treasury for student orgs.', 9.3],
+    [113, 'Vector Labs', 'SynthMarket — v18', 'Fast iterations, stable execution.', 9.3],
+    [114, 'Studio 404', 'EchoNotes', 'Meeting notes that actually ship tasks.', 9.0],
+  ]
+
+  for (const [num, tname, ptitle, ptag, total] of [...extraTeams, ...showcase]) {
     const em = `infinite.content130${num}@gmail.com`
     let u = await User.findOne({ email: em })
     if (!u) {

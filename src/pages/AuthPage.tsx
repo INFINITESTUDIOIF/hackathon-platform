@@ -7,6 +7,7 @@ import { buttonClass } from '../components/ui/buttonClass'
 import { supabase } from '../lib/supabase'
 import { mongoRegister } from '../services/mongoApi'
 import { useToast } from '../context/ToastContext'
+import { FullScreenLoader } from '../components/ui/FullScreenLoader'
 
 /** Official multi-color Google G (brand colors). */
 function GoogleColorLogo({ className }: { className?: string }) {
@@ -51,18 +52,24 @@ export function AuthPage() {
   const [signupStep, setSignupStep] = useState<1 | 2>(1)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const [loginAttempts, setLoginAttempts] = useState(0)
 
   const submitLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
-    const ok = await loginWithPassword(email, password)
-    if (ok) {
-      pushToast('Signed in successfully.')
-      navigate('/')
-      return
+    setSubmitting(true)
+    try {
+      const ok = await loginWithPassword(email, password)
+      if (ok) {
+        setLoginAttempts(0)
+        pushToast('Signed in successfully.')
+        navigate('/')
+        return
+      }
+    } finally {
+      setSubmitting(false)
     }
     if (supabaseMode && !useApiBackend && supabase) {
-      setSubmitting(true)
       try {
         const { error: authErr } = await supabase.auth.signInWithPassword({
           email: email.trim(),
@@ -79,18 +86,26 @@ export function AuthPage() {
       }
       return
     }
+    setLoginAttempts((n) => n + 1)
     setError('Invalid email or password. Try again.')
   }
 
   const oauthGoogle = () => {
-    if (supabaseMode && !useApiBackend) {
-      void signInWithGoogle()
-      return
-    }
-    if (useApiBackend) {
-      setError(
-        'This deployment uses email/password with the API. Add Supabase env vars without VITE_API_URL if you need Google-only sign-in.',
-      )
+    if (supabaseMode) {
+      void (async () => {
+        setError(null)
+        setSubmitting(true)
+        try {
+          await signInWithGoogle()
+        } catch (err) {
+          setSubmitting(false)
+          setError(
+            err instanceof Error
+              ? err.message
+              : 'Google sign-in failed. Please try again.',
+          )
+        }
+      })()
       return
     }
     setError('Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to use Google sign-in.')
@@ -114,11 +129,20 @@ export function AuthPage() {
     setError(null)
     setSubmitting(true)
     try {
+      if (!fullName.trim()) {
+        setError('Please enter your name.')
+        return
+      }
       await mongoRegister(email.trim(), password, fullName.trim())
       pushToast('Account created. Welcome!')
       window.location.assign('/')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Sign up failed.')
+      const msg = err instanceof Error ? err.message : 'Sign up failed.'
+      if (/already registered|already/i.test(msg)) {
+        setError('This email is already signed up. Please sign in.')
+      } else {
+        setError(msg)
+      }
     } finally {
       setSubmitting(false)
     }
@@ -126,6 +150,7 @@ export function AuthPage() {
 
   return (
     <div className="purple-auth-bg min-h-dvh p-4 sm:p-8">
+      {submitting && <FullScreenLoader label="Just a moment…" />}
       <div className="mx-auto grid min-h-[calc(100dvh-2rem)] max-w-7xl overflow-hidden rounded-[34px] purple-auth-panel lg:min-h-[calc(100dvh-4rem)] lg:grid-cols-[1.05fr_1fr]">
         <div className="relative hidden overflow-hidden border-r border-white/10 p-8 lg:block xl:p-12">
           <img
@@ -211,6 +236,17 @@ export function AuthPage() {
 
             {mode === 'signup' && useApiBackend ? (
               <div className="mt-8 space-y-5">
+                {supabaseMode && (
+                  <Button
+                    size="lg"
+                    type="button"
+                    className="w-full rounded-xl text-base font-semibold uppercase tracking-wider"
+                    onClick={() => void oauthGoogle()}
+                  >
+                    <GoogleColorLogo className="h-5 w-5" />
+                    Sign up with Google
+                  </Button>
+                )}
                 {signupStep === 1 ? (
                   <form onSubmit={submitSignupStep1} className="space-y-4">
                     <label className="block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400">
@@ -335,7 +371,7 @@ export function AuthPage() {
                   </div>
                 )}
               </div>
-            ) : mode === 'signup' && !useApiBackend && supabaseMode ? (
+            ) : mode === 'signup' && supabaseMode ? (
               <div className="mt-8 space-y-4">
                 <Button
                   size="lg"
@@ -406,6 +442,12 @@ export function AuthPage() {
                       {error}
                     </p>
                   )}
+                  {loginAttempts >= 2 && (
+                    <p className="text-xs text-zinc-500">
+                      Forgot password? If this email is already registered, use Google
+                      sign-in (if connected) or contact admin to reset.
+                    </p>
+                  )}
                   <Button
                     size="lg"
                     className="mt-1 w-full rounded-xl text-base font-semibold uppercase tracking-wider"
@@ -417,7 +459,7 @@ export function AuthPage() {
                   </Button>
                 </form>
 
-                {supabaseMode && !useApiBackend && mode === 'login' && (
+                {supabaseMode && mode === 'login' && (
                   <>
                     <div className="relative py-5">
                       <div className="absolute inset-0 flex items-center">

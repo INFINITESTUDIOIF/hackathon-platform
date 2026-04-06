@@ -46,6 +46,8 @@ function toProfile(u) {
     role: u.role,
     team_id: u.teamId ? u.teamId.toString() : null,
     approval_status: u.approvalStatus,
+    google_verified: Boolean(u.googleVerified),
+    password_set: Boolean(u.passwordHash && String(u.passwordHash).length > 0),
   }
 }
 
@@ -205,6 +207,32 @@ router.get('/auth/me', authMiddleware, requireAuth, async (req, res) => {
   res.json({ user: toProfile(user) })
 })
 
+/**
+ * For Google-first accounts: set an app password (once).
+ * Production-safe rule: only allowed when passwordHash is empty.
+ */
+router.post('/auth/set-password', authMiddleware, requireAuth, async (req, res) => {
+  try {
+    const user = await User.findById(req.userId)
+    if (!user) return res.status(404).json({ error: 'Not found' })
+    if (user.passwordHash && String(user.passwordHash).length > 0) {
+      return res.status(409).json({ error: 'Password already set.' })
+    }
+    const password = String(req.body.password || '')
+    const fullName = String(req.body.fullName || '').trim()
+    if (password.length < 6) {
+      return res.status(400).json({ error: 'Password must be at least 6 characters.' })
+    }
+    user.passwordHash = await bcrypt.hash(password, 10)
+    if (fullName) user.fullName = fullName
+    await user.save()
+    res.json({ user: toProfile(user) })
+  } catch (e) {
+    console.error(e)
+    res.status(500).json({ error: 'Could not set password.' })
+  }
+})
+
 router.post('/auth/google-profile', authMiddleware, requireAuth, async (req, res) => {
   try {
     const { email, name } = req.body || {}
@@ -269,6 +297,7 @@ router.get('/events/current', async (_req, res) => {
       judgingStart: ev.judgingStart,
       winnerAnnouncement: ev.winnerAnnouncement,
       autoLock: ev.autoLock,
+      scoringMode: ev.scoringMode || 'rubric',
       rubric: ev.rubric,
       tracks: ev.tracks,
     },
@@ -296,6 +325,7 @@ router.put('/events/current', authMiddleware, requireAuth, async (req, res) => {
     'judgingStart',
     'winnerAnnouncement',
     'autoLock',
+    'scoringMode',
     'rubric',
     'tracks',
   ]
@@ -315,6 +345,7 @@ router.put('/events/current', authMiddleware, requireAuth, async (req, res) => {
       judgingStart: ev.judgingStart,
       winnerAnnouncement: ev.winnerAnnouncement,
       autoLock: ev.autoLock,
+      scoringMode: ev.scoringMode || 'rubric',
       rubric: ev.rubric,
       tracks: ev.tracks,
     },

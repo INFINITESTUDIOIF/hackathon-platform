@@ -73,6 +73,17 @@ export async function mongoSupabaseOAuthSync(accessToken: string) {
   return data.user
 }
 
+export async function mongoSetPassword(payload: {
+  password: string
+  fullName?: string
+}) {
+  const data = await apiFetch<{ user: ProfileRow }>('/api/auth/set-password', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+  return data.user
+}
+
 export async function mongoGoogleProfileSync(body: {
   email: string
   name?: string
@@ -139,6 +150,7 @@ export async function fetchCurrentEventMongo(): Promise<EventSetup | null> {
       judgingStart: String(e.judgingStart ?? ''),
       winnerAnnouncement: String(e.winnerAnnouncement ?? ''),
       autoLock: Boolean(e.autoLock),
+      scoringMode: (e.scoringMode as EventSetup['scoringMode']) ?? 'rubric',
       rubric: Array.isArray(e.rubric) ? (e.rubric as EventSetup['rubric']) : [],
       tracks: Array.isArray(e.tracks) ? (e.tracks as string[]) : [],
     }

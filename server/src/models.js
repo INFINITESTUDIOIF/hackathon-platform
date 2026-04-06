@@ -73,6 +73,7 @@ const hackathonEventSchema = new mongoose.Schema(
     judgingStart: { type: String, default: '' },
     winnerAnnouncement: { type: String, default: '' },
     autoLock: { type: Boolean, default: true },
+    scoringMode: { type: String, enum: ['rubric', 'stars'], default: 'rubric' },
     rubric: { type: [rubricCriterionSchema], default: [] },
     tracks: { type: [String], default: [] },
   },

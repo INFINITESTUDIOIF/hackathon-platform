@@ -27,6 +27,7 @@ export type EventSetup = {
   judgingStart: string
   winnerAnnouncement: string
   autoLock: boolean
+  scoringMode: 'rubric' | 'stars'
   rubric: RubricCriterion[]
   tracks: string[]
 }
@@ -42,6 +43,7 @@ export const defaultEventSetup = (): EventSetup => ({
   judgingStart: '2026-04-02',
   winnerAnnouncement: '2026-04-03',
   autoLock: true,
+  scoringMode: 'rubric',
   rubric: [
     {
       id: 'r1',

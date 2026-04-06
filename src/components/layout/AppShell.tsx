@@ -1,5 +1,5 @@
 import { Link, NavLink, useLocation } from 'react-router-dom'
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   BarChart3,
   BellRing,
@@ -11,31 +11,30 @@ import {
   Sparkles,
   Trophy,
   Users,
-  X,
 } from 'lucide-react'
 import clsx from 'clsx'
 import { useApp } from '../../context/AppContext'
 import { Badge } from '../ui/Badge'
 import { FloatingAppFrame } from './FloatingAppFrame'
+import { Button } from '../ui/Button'
+import { mongoSetPassword } from '../../services/mongoApi'
 
 const navJudge = [
-  { to: '/judge/feed', label: 'Feed', icon: LayoutGrid },
-  { to: '/judge/dashboard', label: 'Dashboard', icon: BarChart3 },
+  { to: '/judge/feed', label: 'Dashboard', icon: LayoutGrid },
+  { to: '/judge/dashboard', label: 'Progress', icon: BarChart3 },
   { to: '/leaderboard', label: 'Leaderboard', icon: Trophy },
 ]
 
 const navAdmin = [
-  { to: '/admin', label: 'Admin', icon: Shield },
+  { to: '/admin', label: 'Dashboard', icon: Shield },
   { to: '/admin/event-setup', label: 'Event setup', icon: CalendarCog },
   { to: '/leaderboard', label: 'Leaderboard', icon: Trophy },
 ]
 
 const navTeam = [
-  { to: '/team', label: 'Your project', icon: Users },
+  { to: '/team', label: 'Dashboard', icon: Users },
   { to: '/leaderboard', label: 'Leaderboard', icon: Trophy },
 ]
-
-const WINNER_DISMISS_KEY = 'hackathon_winner_banner_dismissed_at'
 
 function ConfettiBurst() {
   const pieces = Array.from({ length: 52 }, (_, i) => ({
@@ -68,20 +67,31 @@ function ConfettiBurst() {
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { role, authenticated, logout, winnerAnnouncedAt } = useApp()
+  const {
+    role,
+    authenticated,
+    logout,
+    winnerAnnouncedAt,
+    profile,
+    useApiBackend,
+    signInWithGoogle,
+    refreshProfile,
+  } = useApp()
   const [party, setParty] = useState(false)
-  const [dismissedAt, setDismissedAt] = useState<string | null>(() => {
-    try {
-      return localStorage.getItem(WINNER_DISMISS_KEY)
-    } catch {
-      return null
-    }
-  })
+  const [winnerToastOpen, setWinnerToastOpen] = useState(false)
+  const [setupOpen, setSetupOpen] = useState(false)
+  const [lastWinnerAtSeen, setLastWinnerAtSeen] = useState<string | null>(null)
+  const [setupPass, setSetupPass] = useState('')
+  const [setupName, setSetupName] = useState('')
+  const [setupBusy, setSetupBusy] = useState(false)
+  const [setupErr, setSetupErr] = useState<string | null>(null)
 
   useEffect(() => {
     const onAnnounce = () => {
       setParty(true)
       window.setTimeout(() => setParty(false), 2600)
+      setWinnerToastOpen(true)
+      window.setTimeout(() => setWinnerToastOpen(false), 3000)
     }
     window.addEventListener('hackathon:winners-announced', onAnnounce)
     return () =>
@@ -90,25 +100,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!winnerAnnouncedAt) return
-    try {
-      setDismissedAt(localStorage.getItem(WINNER_DISMISS_KEY))
-    } catch {
-      /* ignore */
-    }
-  }, [winnerAnnouncedAt])
+    if (winnerAnnouncedAt === lastWinnerAtSeen) return
+    setLastWinnerAtSeen(winnerAnnouncedAt)
+    setWinnerToastOpen(true)
+    window.setTimeout(() => setWinnerToastOpen(false), 3000)
+  }, [winnerAnnouncedAt, lastWinnerAtSeen])
 
-  const winnerBannerOpen =
-    Boolean(winnerAnnouncedAt) && dismissedAt !== winnerAnnouncedAt
-
-  const dismissWinnerBanner = () => {
-    if (!winnerAnnouncedAt) return
-    try {
-      localStorage.setItem(WINNER_DISMISS_KEY, winnerAnnouncedAt)
-    } catch {
-      /* ignore */
-    }
-    setDismissedAt(winnerAnnouncedAt)
-  }
   const loc = useLocation()
   const isAuth = loc.pathname.startsWith('/auth')
 
@@ -118,6 +115,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const items =
     role === 'admin' ? navAdmin : role === 'team' ? navTeam : navJudge
+
+  const needsSetup = useMemo(() => {
+    if (!useApiBackend) return false
+    if (!profile) return false
+    const missingPass = profile.password_set === false
+    const missingGoogle = profile.google_verified === false
+    return Boolean(missingPass || missingGoogle)
+  }, [useApiBackend, profile])
+
+  useEffect(() => {
+    if (!needsSetup) {
+      setSetupOpen(false)
+      setSetupErr(null)
+      setSetupBusy(false)
+      return
+    }
+    setSetupOpen(true)
+  }, [needsSetup])
 
   return (
     <FloatingAppFrame>
@@ -176,27 +191,115 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         {party && <ConfettiBurst />}
 
-        {winnerAnnouncedAt && winnerBannerOpen && (
-          <div className="fixed right-4 top-16 z-[90] w-[min(92vw,420px)]">
+        {winnerToastOpen && (
+          <div
+            className={clsx(
+              'fixed right-4 top-16 z-[90] w-[min(92vw,420px)] transition-all duration-300',
+              'translate-y-0 opacity-100',
+            )}
+          >
             <div className="relative overflow-hidden rounded-2xl border border-violet-400/35 bg-gradient-to-br from-violet-950/95 via-zinc-950/98 to-zinc-950 p-4 shadow-[0_0_44px_rgba(124,58,237,0.45)] backdrop-blur-md">
               <div className="pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full bg-violet-500/25 blur-2xl" />
-              <button
-                type="button"
-                onClick={dismissWinnerBanner}
-                className="absolute right-2 top-2 rounded-lg p-1.5 text-zinc-500 transition hover:bg-zinc-800 hover:text-zinc-200"
-                aria-label="Dismiss winner announcement"
-              >
-                <X className="h-4 w-4" />
-              </button>
               <p className="flex items-center gap-2 pr-8 text-sm font-bold uppercase tracking-wider text-violet-200">
                 <Sparkles className="h-4 w-4 text-amber-300" />
                 Winners announced
               </p>
               <p className="mt-2 flex items-start gap-2 text-sm leading-relaxed text-zinc-200">
                 <BellRing className="mt-0.5 h-4 w-4 shrink-0 text-violet-400" />
-                Final results are on the leaderboard. This notice stays until you
-                close it.
+                Results are live on the leaderboard.
               </p>
+            </div>
+          </div>
+        )}
+
+        {setupOpen && needsSetup && (
+          <div className="fixed inset-0 z-[95] grid place-items-center bg-black/70 p-4 backdrop-blur-sm">
+            <div className="w-[min(92vw,520px)] rounded-3xl border border-white/10 bg-zinc-950/80 p-6 shadow-[0_0_40px_rgba(124,58,237,0.25)]">
+              <p className="text-sm font-bold uppercase tracking-wider text-violet-200">
+                Finish account setup
+              </p>
+              <p className="mt-2 text-sm text-zinc-300">
+                Your account must have both an app password and Google verification.
+              </p>
+
+              {profile?.password_set === false && (
+                <div className="mt-5 space-y-3">
+                  <label className="block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400">
+                    Display name (optional)
+                    <input
+                      value={setupName}
+                      onChange={(e) => setSetupName(e.target.value)}
+                      className="input-dark mt-2 w-full rounded-xl border-white/10 bg-zinc-950/70"
+                      placeholder="Rishi"
+                      disabled={setupBusy}
+                    />
+                  </label>
+                  <label className="block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400">
+                    Create app password
+                    <input
+                      type="password"
+                      value={setupPass}
+                      onChange={(e) => setSetupPass(e.target.value)}
+                      className="input-dark mt-2 w-full rounded-xl border-white/10 bg-zinc-950/70"
+                      placeholder="••••••••"
+                      disabled={setupBusy}
+                    />
+                  </label>
+                  <Button
+                    size="sm"
+                    className="w-full rounded-xl"
+                    disabled={setupBusy || setupPass.length < 6}
+                    onClick={() => {
+                      void (async () => {
+                        setSetupErr(null)
+                        setSetupBusy(true)
+                        try {
+                          await mongoSetPassword({
+                            password: setupPass,
+                            fullName: setupName.trim() || undefined,
+                          })
+                          setSetupPass('')
+                          await refreshProfile()
+                        } catch (e) {
+                          setSetupErr(
+                            e instanceof Error ? e.message : 'Could not set password.',
+                          )
+                        } finally {
+                          setSetupBusy(false)
+                        }
+                      })()
+                    }}
+                  >
+                    {setupBusy ? 'Saving…' : 'Save password'}
+                  </Button>
+                </div>
+              )}
+
+              {profile?.google_verified === false && (
+                <div className="mt-5">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="w-full rounded-xl"
+                    disabled={setupBusy}
+                    onClick={() => void signInWithGoogle()}
+                  >
+                    Verify with Google
+                  </Button>
+                  <p className="mt-2 text-xs text-zinc-500">
+                    This will open Google sign-in and return you here.
+                  </p>
+                </div>
+              )}
+
+              {setupErr && (
+                <p
+                  className="mt-4 rounded-xl border border-red-500/40 bg-red-950/50 px-3 py-2 text-sm text-red-300"
+                  role="alert"
+                >
+                  {setupErr}
+                </p>
+              )}
             </div>
           </div>
         )}

@@ -545,13 +545,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [useApiBackend])
 
   const signInWithGoogle = useCallback(async () => {
-    if (!supabase) return
-    await supabase.auth.signInWithOAuth({
+    if (!supabase) {
+      throw new Error(
+        'Google sign-in is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.',
+      )
+    }
+    const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
         redirectTo: `${window.location.origin}/auth/callback`,
       },
     })
+    if (error) {
+      throw new Error(error.message || 'Could not start Google sign-in.')
+    }
   }, [])
 
   const markJudged = useCallback((projectId: string) => {
