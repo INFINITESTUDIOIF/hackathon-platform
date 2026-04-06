@@ -767,3 +767,5 @@ router.patch('/admin/invited-judges/:jid', authMiddleware, requireAuth, async (r
   await s.save()
   res.json({ invitedJudges: s.invitedJudges })
 })
+
+export default router
