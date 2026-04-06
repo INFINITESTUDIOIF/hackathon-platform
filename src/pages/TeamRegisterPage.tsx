@@ -4,7 +4,7 @@ import { Users } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import { Button } from '../components/ui/Button'
 import { createTeam } from '../services/supabaseApi'
-import { createTeamMongo } from '../services/mongoApi'
+import { createTeamMongo, getSelectedEventId } from '../services/mongoApi'
 import { supabase } from '../lib/supabase'
 
 export function TeamRegisterPage() {
@@ -35,7 +35,7 @@ export function TeamRegisterPage() {
     setBusy(true)
     try {
       if (useApiBackend) {
-        await createTeamMongo(name.trim())
+        await createTeamMongo(name.trim(), getSelectedEventId())
       } else {
         if (!supabase) {
           setError('Not signed in.')

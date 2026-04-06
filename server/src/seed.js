@@ -4,6 +4,7 @@ import bcrypt from 'bcryptjs'
 import {
   User,
   Team,
+  TeamMember,
   Project,
   HackathonEvent,
   AppSettings,
@@ -59,6 +60,7 @@ async function run() {
       scoringMode: 'rubric',
       rubric: defaultRubric,
       tracks: ['FinTech', 'Healthcare', 'AI/ML', 'DevTools', 'Sustainability', 'Web Dev', 'App Dev', 'Blockchain'],
+      lifecycleStatus: 'active',
     })
   }
 
@@ -85,6 +87,7 @@ async function run() {
   if (!admin) {
     admin = await User.create({
       email: adminEmail,
+      username: 'admin',
       passwordHash: hash,
       fullName: 'Organizer',
       role: 'admin',
@@ -95,6 +98,7 @@ async function run() {
     admin.passwordHash = hash
     admin.role = 'admin'
     admin.approvalStatus = 'approved'
+    if (!admin.username) admin.username = 'admin'
     await admin.save()
     console.log('Updated admin:', adminEmail)
   }
@@ -111,33 +115,76 @@ async function run() {
 /** Shared password for seeded demo logins (change in production). */
 const DEMO_PASS = 'DemoPass123!'
 
+async function ensureUsername(email, hint) {
+  const base = String(hint || email.split('@')[0] || 'user')
+    .toLowerCase()
+    .replace(/[^a-z0-9_]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '')
+    .slice(0, 20) || 'user'
+  let candidate = base
+  let n = 0
+  while (await User.findOne({ username: candidate })) {
+    n += 1
+    candidate = `${base.slice(0, 16)}_${n}`
+  }
+  return candidate
+}
+
 async function seedDemoAccounts(event) {
   const demoHash = await bcrypt.hash(DEMO_PASS, 10)
+  const allowed = allowedGmails()
+
+  // Create temporary-but-real team accounts for all allowed Gmail IDs
+  // so full account list/testing is immediately available.
+  for (const email of allowed) {
+    const existing = await User.findOne({ email })
+    if (!existing) {
+      const username = await ensureUsername(email)
+      await User.create({
+        email,
+        username,
+        passwordHash: demoHash,
+        fullName: email.split('@')[0],
+        role: 'team',
+        approvalStatus: 'approved',
+      })
+    } else if (!existing.username) {
+      existing.username = await ensureUsername(email)
+      await existing.save()
+    }
+  }
 
   const judgeEmail = (process.env.DEMO_JUDGE_EMAIL || 'judge.demo@hackathon.local').toLowerCase()
   let judge = await User.findOne({ email: judgeEmail })
   if (!judge) {
     judge = await User.create({
       email: judgeEmail,
+      username: await ensureUsername(judgeEmail, 'demo_judge'),
       passwordHash: demoHash,
       fullName: 'Demo Judge',
       role: 'judge',
       approvalStatus: 'approved',
     })
     console.log('Demo judge:', judgeEmail, '/', DEMO_PASS)
+  } else {
+    judge.passwordHash = demoHash
+    judge.role = 'judge'
+    judge.approvalStatus = 'approved'
+    judge.teamId = null
+    if (!judge.username) judge.username = await ensureUsername(judgeEmail, 'demo_judge')
+    await judge.save()
   }
 
   const leadEmail = 'infinite.content13011@gmail.com'
   let lead = await User.findOne({ email: leadEmail })
-  if (!lead) {
-    lead = await User.create({
-      email: leadEmail,
-      passwordHash: demoHash,
-      fullName: 'Team Lead (demo)',
-      role: 'team',
-      approvalStatus: 'approved',
-    })
-  }
+  if (!lead) return
+  lead.passwordHash = demoHash
+  lead.fullName = lead.fullName || 'Team Lead (demo)'
+  lead.role = 'team'
+  lead.approvalStatus = 'approved'
+  if (!lead.username) lead.username = await ensureUsername(leadEmail, 'lead_demo')
+  await lead.save()
 
   let team =
     (await Team.findOne({ createdBy: lead._id })) ||
@@ -148,26 +195,49 @@ async function seedDemoAccounts(event) {
       createdBy: lead._id,
       eventId: event._id,
       status: 'approved',
+      memberIds: [lead._id],
     })
     lead.teamId = team._id
     await lead.save()
+    await TeamMember.updateOne(
+      { userId: lead._id, eventId: event._id },
+      { $set: { teamId: team._id } },
+      { upsert: true },
+    )
     console.log('Demo team + project seed')
+  } else {
+    if (!team.memberIds?.length) {
+      team.memberIds = [lead._id]
+      await team.save()
+    }
+    await TeamMember.updateOne(
+      { userId: lead._id, eventId: event._id },
+      { $set: { teamId: team._id } },
+      { upsert: true },
+    )
   }
 
   const mateEmail = 'infinite.content13012@gmail.com'
   let mate = await User.findOne({ email: mateEmail })
-  if (!mate) {
-    mate = await User.create({
-      email: mateEmail,
-      passwordHash: demoHash,
-      fullName: 'Teammate (demo)',
-      role: 'team',
-      approvalStatus: 'approved',
-      teamId: team._id,
-    })
-  } else if (!mate.teamId) {
-    mate.teamId = team._id
+  if (mate) {
+    mate.passwordHash = demoHash
+    mate.fullName = mate.fullName || 'Teammate (demo)'
+    mate.role = 'team'
+    mate.approvalStatus = 'approved'
+    if (!mate.username) mate.username = await ensureUsername(mateEmail, 'mate_demo')
+    if (!mate.teamId) mate.teamId = team._id
     await mate.save()
+    if (!team.memberIds?.some((id) => id.equals(mate._id))) {
+      if ((team.memberIds?.length || 0) < 4) {
+        team.memberIds = [...(team.memberIds || []), mate._id]
+        await team.save()
+      }
+    }
+    await TeamMember.updateOne(
+      { userId: mate._id, eventId: event._id },
+      { $set: { teamId: team._id } },
+      { upsert: true },
+    )
   }
 
   let proj = await Project.findOne({ teamId: team._id })
@@ -226,11 +296,15 @@ async function seedDemoAccounts(event) {
     if (!u) {
       u = await User.create({
         email: em,
+        username: await ensureUsername(em, `lead_${num}`),
         passwordHash: demoHash,
         fullName: `Lead ${num}`,
         role: 'team',
         approvalStatus: 'approved',
       })
+    } else if (!u.username) {
+      u.username = await ensureUsername(em, `lead_${num}`)
+      await u.save()
     }
     let tm =
       (await Team.findOne({ createdBy: u._id })) ||
@@ -241,13 +315,28 @@ async function seedDemoAccounts(event) {
         createdBy: u._id,
         eventId: event._id,
         status: 'approved',
+        memberIds: [u._id],
       })
       u.teamId = tm._id
       await u.save()
+      await TeamMember.updateOne(
+        { userId: u._id, eventId: event._id },
+        { $set: { teamId: tm._id } },
+        { upsert: true },
+      )
     } else if (tm.status !== 'approved') {
       tm.status = 'approved'
       await tm.save()
     }
+    if (!tm.memberIds?.length) {
+      tm.memberIds = [u._id]
+      await tm.save()
+    }
+    await TeamMember.updateOne(
+      { userId: u._id, eventId: event._id },
+      { $set: { teamId: tm._id } },
+      { upsert: true },
+    )
     let pr = await Project.findOne({ teamId: tm._id })
     if (!pr) {
       pr = await Project.create({

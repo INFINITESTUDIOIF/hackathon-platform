@@ -18,6 +18,8 @@ export type AdminUser = {
 }
 
 export type EventSetup = {
+  /** MongoDB id when loaded from API (active hackathon). */
+  id?: string
   name: string
   tagline: string
   description: string
@@ -30,6 +32,7 @@ export type EventSetup = {
   scoringMode: 'rubric' | 'stars'
   rubric: RubricCriterion[]
   tracks: string[]
+  lifecycleStatus?: 'upcoming' | 'active' | 'completed'
 }
 
 export const defaultEventSetup = (): EventSetup => ({
@@ -75,4 +78,5 @@ export const defaultEventSetup = (): EventSetup => ({
     },
   ],
   tracks: ['FinTech', 'Healthcare', 'AI/ML', 'DevTools', 'Sustainability'],
+  lifecycleStatus: 'active',
 })

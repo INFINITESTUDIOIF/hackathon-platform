@@ -5,7 +5,7 @@ import { useApp } from '../context/AppContext'
 import { Button } from '../components/ui/Button'
 import { buttonClass } from '../components/ui/buttonClass'
 import { supabase } from '../lib/supabase'
-import { mongoRegister } from '../services/mongoApi'
+import { mongoCheckEmailExists, mongoRegister } from '../services/mongoApi'
 import { useToast } from '../context/ToastContext'
 import { FullScreenLoader } from '../components/ui/FullScreenLoader'
 
@@ -42,6 +42,46 @@ export function AuthPage() {
     supabaseMode,
     useApiBackend,
   } = useApp()
+
+  const submitForgot = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setForgotMsg(null)
+    const em = forgotEmail.trim().toLowerCase()
+    if (!em.includes('@')) {
+      setForgotMsg('Enter a valid email.')
+      return
+    }
+    setForgotBusy(true)
+    try {
+      if (useApiBackend) {
+        const exists = await mongoCheckEmailExists(em)
+        if (!exists) {
+          setForgotMsg('No account exists for that email.')
+          return
+        }
+      }
+      if (supabase && supabaseMode) {
+        const { error } = await supabase.auth.resetPasswordForEmail(em, {
+          redirectTo: `${window.location.origin}/auth`,
+        })
+        if (error) {
+          setForgotMsg(error.message || 'Could not send reset email.')
+          return
+        }
+        setForgotMsg('If an account exists, check your email for a reset link.')
+        return
+      }
+      if (useApiBackend) {
+        setForgotMsg(
+          'Add Supabase to your project to send reset emails, or contact an organizer.',
+        )
+        return
+      }
+      setForgotMsg('Password reset is not available in this mode.')
+    } finally {
+      setForgotBusy(false)
+    }
+  }
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -52,7 +92,11 @@ export function AuthPage() {
   const [signupStep, setSignupStep] = useState<1 | 2>(1)
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
-  const [loginAttempts, setLoginAttempts] = useState(0)
+  const [username, setUsername] = useState('')
+  const [forgotOpen, setForgotOpen] = useState(false)
+  const [forgotEmail, setForgotEmail] = useState('')
+  const [forgotMsg, setForgotMsg] = useState<string | null>(null)
+  const [forgotBusy, setForgotBusy] = useState(false)
 
   const submitLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -61,7 +105,6 @@ export function AuthPage() {
     try {
       const ok = await loginWithPassword(email, password)
       if (ok) {
-        setLoginAttempts(0)
         pushToast('Signed in successfully.')
         navigate('/')
         return
@@ -86,7 +129,6 @@ export function AuthPage() {
       }
       return
     }
-    setLoginAttempts((n) => n + 1)
     setError('Invalid email or password. Try again.')
   }
 
@@ -131,19 +173,27 @@ export function AuthPage() {
     try {
       if (!fullName.trim()) {
         setError('Please enter your name.')
+        setSubmitting(false)
         return
       }
-      await mongoRegister(email.trim(), password, fullName.trim())
+      const u = username.trim().toLowerCase().replace(/^@+/g, '')
+      if (!/^[a-z0-9_]{3,24}$/.test(u)) {
+        setError('Username: 3–24 characters, letters, numbers, underscores only.')
+        setSubmitting(false)
+        return
+      }
+      await mongoRegister(email.trim(), password, fullName.trim(), u)
       pushToast('Account created. Welcome!')
-      window.location.assign('/')
+      window.setTimeout(() => {
+        window.location.assign('/')
+      }, 700)
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Sign up failed.'
-      if (/already registered|already/i.test(msg)) {
-        setError('This email is already signed up. Please sign in.')
+      if (/already registered|already|in use/i.test(msg)) {
+        setError('This email or username is already registered. Please sign in.')
       } else {
         setError(msg)
       }
-    } finally {
       setSubmitting(false)
     }
   }
@@ -329,9 +379,20 @@ export function AuthPage() {
                 ) : (
                   <div className="space-y-4">
                     <p className="text-xs text-zinc-500">
-                      Step 2 of 2 · Add how we should display your name, then create
-                      your account.
+                      Step 2 of 2 · Choose a unique username and display name.
                     </p>
+                    <label className="block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400">
+                      Username
+                      <input
+                        value={username}
+                        onChange={(e) =>
+                          setUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))
+                        }
+                        className="input-dark mt-2 w-full rounded-xl border-white/10 bg-zinc-950/70"
+                        placeholder="your_handle"
+                        autoComplete="username"
+                      />
+                    </label>
                     <label className="block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400">
                       Display name
                       <input
@@ -442,12 +503,17 @@ export function AuthPage() {
                       {error}
                     </p>
                   )}
-                  {loginAttempts >= 2 && (
-                    <p className="text-xs text-zinc-500">
-                      Forgot password? If this email is already registered, use Google
-                      sign-in (if connected) or contact admin to reset.
-                    </p>
-                  )}
+                  <button
+                    type="button"
+                    className="text-xs font-medium text-violet-400 hover:text-violet-300"
+                    onClick={() => {
+                      setForgotOpen(true)
+                      setForgotEmail(email.trim())
+                      setForgotMsg(null)
+                    }}
+                  >
+                    Forgot password?
+                  </button>
                   <Button
                     size="lg"
                     className="mt-1 w-full rounded-xl text-base font-semibold uppercase tracking-wider"
@@ -519,6 +585,57 @@ export function AuthPage() {
           </div>
         </div>
       </div>
+
+      {forgotOpen && (
+        <div
+          className="fixed inset-0 z-[1001] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal
+          aria-labelledby="forgot-title"
+        >
+          <div className="w-full max-w-md rounded-2xl border border-white/10 bg-zinc-950 p-6 shadow-xl">
+            <h3 id="forgot-title" className="text-lg font-semibold text-zinc-100">
+              Forgot password
+            </h3>
+            <p className="mt-2 text-sm text-zinc-400">
+              We only send a reset if this email is already registered.
+            </p>
+            <form onSubmit={(e) => void submitForgot(e)} className="mt-4 space-y-3">
+              <input
+                type="email"
+                value={forgotEmail}
+                onChange={(e) => setForgotEmail(e.target.value)}
+                className="input-dark w-full"
+                placeholder="you@example.com"
+                required
+              />
+              {forgotMsg && (
+                <p
+                  className={`text-sm ${/No account|not available|not configured/i.test(forgotMsg) ? 'text-amber-300' : 'text-emerald-300'}`}
+                >
+                  {forgotMsg}
+                </p>
+              )}
+              <div className="flex gap-2">
+                <Button type="submit" size="sm" disabled={forgotBusy} className="flex-1">
+                  {forgotBusy ? 'Sending…' : 'Send reset'}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    setForgotOpen(false)
+                    setForgotMsg(null)
+                  }}
+                >
+                  Close
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

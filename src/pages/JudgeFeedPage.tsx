@@ -78,12 +78,9 @@ export function JudgeFeedPage() {
     <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
       <header className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-sm font-medium text-violet-400">Judge feed</p>
-          <h1 className="mt-1 text-3xl font-bold tracking-tight text-zinc-100">
-            Discover projects
-          </h1>
+          <h1 className="text-3xl font-bold tracking-tight text-zinc-100">Dashboard</h1>
           <p className="mt-2 max-w-xl text-zinc-400">
-            Open a project for full details and scoring on one screen.
+            Browse submissions and open any project to score.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">

@@ -43,19 +43,45 @@ import {
 } from '../services/supabaseApi'
 import {
   fetchAppSettingsMongo,
-  fetchCurrentEventMongo,
+  fetchBootstrapMongo,
   fetchFeedProjectsMongo,
   fetchInvitedJudgesMongo,
-  fetchMyScoresForJudgeMongo,
   getApiToken,
-  mongoFetchMe,
+  getSelectedEventId,
   mongoLogin,
   promoteEmailToJudgeMongo,
   setApiToken,
+  setSelectedEventId,
   updateAppSettingsMongo,
   updateInvitedJudgeStatusMongo,
   upsertJudgeScoreMongo,
 } from '../services/mongoApi'
+
+function uiRole(profileRole: ProfileRow['role'] | null | undefined): Role | null {
+  if (!profileRole) return null
+  if (profileRole === 'team') return 'participant'
+  return profileRole as Role
+}
+
+function mapBootRecordToEventSetup(e: Record<string, unknown> | null): EventSetup | null {
+  if (!e) return null
+  return {
+    id: typeof e.id === 'string' ? e.id : undefined,
+    name: String(e.name ?? ''),
+    tagline: String(e.tagline ?? ''),
+    description: String(e.description ?? ''),
+    bannerDataUrl: (e.bannerDataUrl as string | null) ?? null,
+    submissionStart: String(e.submissionStart ?? ''),
+    submissionEnd: String(e.submissionEnd ?? ''),
+    judgingStart: String(e.judgingStart ?? ''),
+    winnerAnnouncement: String(e.winnerAnnouncement ?? ''),
+    autoLock: Boolean(e.autoLock),
+    scoringMode: (e.scoringMode as EventSetup['scoringMode']) ?? 'rubric',
+    rubric: Array.isArray(e.rubric) ? (e.rubric as EventSetup['rubric']) : [],
+    tracks: Array.isArray(e.tracks) ? (e.tracks as string[]) : [],
+    lifecycleStatus: (e.lifecycleStatus as EventSetup['lifecycleStatus']) ?? 'active',
+  }
+}
 
 type AppState = {
   supabaseMode: boolean
@@ -240,9 +266,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (!cancelled) setProfileLoading(false)
         return
       }
-      const u = await mongoFetchMe()
+      const boot = await fetchBootstrapMongo()
       if (cancelled) return
-      if (!u) {
+      if (!boot?.user) {
         setApiToken(null)
         setProfile(null)
         setRole(null)
@@ -252,14 +278,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setProfileLoading(false)
         return
       }
+      if (!getSelectedEventId() && boot.currentEventId) {
+        setSelectedEventId(boot.currentEventId)
+      }
+      const u = boot.user
       setProfile(u)
-      setRole(u.role)
+      setRole(uiRole(u.role))
+      if (boot.settings?.leaderboard_visibility) {
+        setLeaderboardVisibilityState(boot.settings.leaderboard_visibility)
+      }
+      setWinnerAnnouncedAt(boot.settings?.winner_announced_at ?? null)
+      setFeedProjects(boot.projects?.length ? boot.projects : [])
+      setFeedError(false)
+      const evSetup = mapBootRecordToEventSetup(boot.event)
+      if (evSetup) setEventSetup(evSetup)
       if (u.role === 'judge' && u.approval_status === 'approved') {
-        const scoreRows = await fetchMyScoresForJudgeMongo(u.id)
         const nextJudged = new Set<string>()
         const nextScores: Record<string, Record<string, number>> = {}
         const nextComments: Record<string, string> = {}
-        for (const r of scoreRows) {
+        for (const r of boot.myJudgeScores || []) {
           nextJudged.add(r.project_id)
           nextScores[r.project_id] = r.criterion_scores || {}
           if (r.comment) nextComments[r.project_id] = r.comment
@@ -271,14 +308,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setJudgedIds(new Set())
         setScores({})
         setComments({})
-      }
-      await refreshFeed()
-      await refreshAppSettings()
-      try {
-        const ev = await fetchCurrentEventMongo()
-        if (ev && !cancelled) setEventSetup(ev)
-      } catch {
-        /* keep default */
       }
       if (u.role === 'admin') {
         try {
@@ -294,7 +323,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true
     }
-  }, [useApiBackend, refreshFeed, refreshAppSettings])
+  }, [useApiBackend])
 
   const ensureProfile = useCallback(
     async (user: NonNullable<Session['user']>) => {
@@ -325,7 +354,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       setProfile(row)
       if (row) {
-        setRole(row.role)
+        setRole(uiRole(row.role))
         if (row.role === 'judge' && row.approval_status === 'approved') {
           const scoreRows = await fetchMyScoresForJudge(user.id)
           const nextJudged = new Set<string>()
@@ -350,11 +379,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const refreshProfile = useCallback(async () => {
     if (useApiBackend) {
       setProfileLoading(true)
-      const u = await mongoFetchMe()
+      const boot = await fetchBootstrapMongo()
+      const u = boot?.user ?? null
       setProfile(u)
-      setRole(u?.role ?? null)
+      setRole(uiRole(u?.role ?? null))
+      if (boot?.settings?.leaderboard_visibility) {
+        setLeaderboardVisibilityState(boot.settings.leaderboard_visibility)
+      }
+      setWinnerAnnouncedAt(boot?.settings?.winner_announced_at ?? null)
+      if (boot?.projects) {
+        setFeedProjects(boot.projects.length ? boot.projects : [])
+        setFeedError(false)
+      }
+      const evSetup = mapBootRecordToEventSetup(boot?.event ?? null)
+      if (evSetup) setEventSetup(evSetup)
       if (u?.role === 'judge' && u.approval_status === 'approved') {
-        const scoreRows = await fetchMyScoresForJudgeMongo(u.id)
+        const scoreRows = boot?.myJudgeScores ?? []
         const nextJudged = new Set<string>()
         const nextScores: Record<string, Record<string, number>> = {}
         const nextComments: Record<string, string> = {}
@@ -366,9 +406,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setJudgedIds(nextJudged)
         setScores((prev) => ({ ...nextScores, ...prev }))
         setComments((prev) => ({ ...nextComments, ...prev }))
+      } else {
+        setJudgedIds(new Set())
+        setScores({})
+        setComments({})
       }
-      await refreshFeed()
-      await refreshAppSettings()
       setProfileLoading(false)
       return
     }
@@ -444,17 +486,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
     async (email: string, password: string) => {
       if (useApiBackend) {
         try {
-          const u = await mongoLogin(email, password)
+          await mongoLogin(email, password)
+          const boot = await fetchBootstrapMongo()
+          if (!boot?.user) return false
+          if (!getSelectedEventId() && boot.currentEventId) {
+            setSelectedEventId(boot.currentEventId)
+          }
+          const u = boot.user
           setProfile(u)
-          setRole(u.role)
+          setRole(uiRole(u.role))
           demoPasswordAuthRef.current = false
           setDemoPasswordAuth(false)
+          if (boot.settings?.leaderboard_visibility) {
+            setLeaderboardVisibilityState(boot.settings.leaderboard_visibility)
+          }
+          setWinnerAnnouncedAt(boot.settings?.winner_announced_at ?? null)
+          setFeedProjects(boot.projects?.length ? boot.projects : [])
+          setFeedError(false)
+          const evSetup = mapBootRecordToEventSetup(boot.event)
+          if (evSetup) setEventSetup(evSetup)
           if (u.role === 'judge' && u.approval_status === 'approved') {
-            const scoreRows = await fetchMyScoresForJudgeMongo(u.id)
             const nextJudged = new Set<string>()
             const nextScores: Record<string, Record<string, number>> = {}
             const nextComments: Record<string, string> = {}
-            for (const r of scoreRows) {
+            for (const r of boot.myJudgeScores || []) {
               nextJudged.add(r.project_id)
               nextScores[r.project_id] = r.criterion_scores || {}
               if (r.comment) nextComments[r.project_id] = r.comment
@@ -466,14 +521,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
             setJudgedIds(new Set())
             setScores({})
             setComments({})
-          }
-          await refreshFeed()
-          await refreshAppSettings()
-          try {
-            const ev = await fetchCurrentEventMongo()
-            if (ev) setEventSetup(ev)
-          } catch {
-            /* ignore */
           }
           if (u.role === 'admin') {
             try {
@@ -517,7 +564,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
 
       if (e === TEAM_EMAIL.toLowerCase() && password === TEAM_LOGIN_PASSWORD) {
-        setRole('team')
+        setRole('participant')
         if (supabaseMode) {
           demoPasswordAuthRef.current = true
           setDemoPasswordAuth(true)
@@ -529,12 +576,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       return false
     },
-    [supabaseMode, invitedJudges, useApiBackend, refreshFeed, refreshAppSettings],
+    [supabaseMode, invitedJudges, useApiBackend],
   )
 
   const logout = useCallback(async () => {
     demoPasswordAuthRef.current = false
-    if (useApiBackend) setApiToken(null)
+    if (useApiBackend) {
+      setApiToken(null)
+      setSelectedEventId(null)
+    }
     if (supabase) await supabase.auth.signOut()
     setLocalAuthenticated(false)
     setDemoPasswordAuth(false)

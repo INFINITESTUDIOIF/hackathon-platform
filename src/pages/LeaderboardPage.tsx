@@ -8,7 +8,6 @@ import {
   Trophy,
 } from 'lucide-react'
 import { Fragment, useEffect, useMemo, useState } from 'react'
-import clsx from 'clsx'
 import { PROJECTS } from '../data/mock'
 import type { Project } from '../data/mock'
 import { useApp } from '../context/AppContext'
@@ -21,6 +20,7 @@ import {
   fetchLeaderboardAwaitingMongo,
   fetchScoresMapMongo,
 } from '../services/mongoApi'
+import { isParticipantRole } from '../data/mock'
 
 export function LeaderboardPage() {
   const {
@@ -117,7 +117,7 @@ export function LeaderboardPage() {
     visibilityForUi === 'public' ||
     (visibilityForUi === 'judges_only' && role === 'judge')
 
-  const hideScoresFromUi = role === 'team'
+  const hideScoresFromUi = isParticipantRole(role)
 
   const visibilityButtons: { value: LeaderboardVisibility; label: string }[] = [
     { value: 'admin_only', label: 'Admin only' },
@@ -215,70 +215,78 @@ export function LeaderboardPage() {
       {(canSeeLeaderboard || isAdmin) && (
         <>
           {first && (
-            <div className="relative z-10 mt-6 mb-12 flex flex-col items-center gap-4 sm:flex-row sm:items-stretch sm:justify-center sm:gap-5">
-              {[
-                {
-                  p: second,
-                  label: 'Runner up',
-                  sub: 'Silver',
-                  icon: Medal,
-                  iconClass: 'text-slate-200',
-                  card: 'border-slate-400/35 bg-gradient-to-b from-slate-700/50 via-zinc-900 to-zinc-950 sm:order-1',
-                  lift: 'sm:translate-y-5 sm:scale-[1.0]',
-                },
-                {
-                  p: first,
-                  label: 'Grand champion',
-                  sub: 'Gold',
-                  icon: Trophy,
-                  iconClass: 'text-amber-300',
-                  card: 'order-first border-amber-400/55 bg-gradient-to-b from-amber-950/90 via-zinc-900 to-zinc-950 shadow-[0_0_50px_rgba(251,191,36,0.2)] sm:order-2',
-                  lift: 'sm:-translate-y-1 sm:scale-[1.03]',
-                },
-                {
-                  p: third,
-                  label: 'Bronze',
-                  sub: 'Third place',
-                  icon: Medal,
-                  iconClass: 'text-amber-700',
-                  card: 'border-orange-700/40 bg-gradient-to-b from-orange-950/55 via-zinc-900 to-zinc-950 sm:order-3',
-                  lift: 'sm:translate-y-6 sm:scale-[1.0]',
-                },
-              ].map(
-                ({ p, label, sub, icon: Icon, iconClass, card, lift }) =>
-                  p && (
-                    <div
-                      key={p.id}
-                      className={clsx(
-                        'relative w-full max-w-[340px] flex-1 overflow-hidden rounded-3xl border p-6 transition-transform',
-                        card,
-                        lift,
-                      )}
-                    >
-                      <div className="flex items-center gap-2">
-                        <Icon className={clsx('h-8 w-8', iconClass)} />
-                        <div>
-                          <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-zinc-400">
-                            {label}
-                          </p>
-                          <p className="text-xs text-zinc-500">{sub}</p>
-                        </div>
+            <div className="relative z-10 mx-auto mt-6 mb-12 grid max-w-5xl grid-cols-1 gap-5 sm:grid-cols-3 sm:items-end sm:gap-4">
+              <div className="sm:col-start-1 sm:row-start-2 sm:self-end">
+                {second ? (
+                  <div className="relative w-full overflow-hidden rounded-3xl border border-slate-400/35 bg-gradient-to-b from-slate-700/50 via-zinc-900 to-zinc-950 p-6">
+                    <div className="flex items-center gap-2">
+                      <Medal className="h-8 w-8 text-slate-200" />
+                      <div>
+                        <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-zinc-400">
+                          Runner up
+                        </p>
+                        <p className="text-xs text-zinc-500">Silver</p>
                       </div>
-                      <p className="mt-4 text-lg font-bold text-zinc-100">{p.title}</p>
-                      <p className="text-sm text-zinc-400">{p.teamName}</p>
-                      <p className="mt-4 text-3xl font-black tabular-nums text-gradient">
-                        {hideScoresFromUi
-                          ? '—'
-                          : `${(p.score ?? 0).toFixed(1)} `}
-                        {!hideScoresFromUi && (
-                          <span className="text-lg font-semibold text-zinc-500">
-                            pts
-                          </span>
-                        )}
-                      </p>
                     </div>
-                  ),
-              )}
+                    <p className="mt-4 text-lg font-bold text-zinc-100">{second.title}</p>
+                    <p className="text-sm text-zinc-400">{second.teamName}</p>
+                    <p className="mt-4 text-3xl font-black tabular-nums text-gradient">
+                      {hideScoresFromUi ? '—' : `${(second.score ?? 0).toFixed(1)}`}
+                      {!hideScoresFromUi && (
+                        <span className="text-lg font-semibold text-zinc-500"> pts</span>
+                      )}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="hidden sm:block" />
+                )}
+              </div>
+              <div className="sm:col-start-2 sm:row-start-1 sm:self-end">
+                <div className="relative w-full overflow-hidden rounded-3xl border border-amber-400/55 bg-gradient-to-b from-amber-950/90 via-zinc-900 to-zinc-950 p-6 shadow-[0_0_50px_rgba(251,191,36,0.2)]">
+                  <div className="flex items-center gap-2">
+                    <Trophy className="h-8 w-8 text-amber-300" />
+                    <div>
+                      <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-zinc-400">
+                        Champion
+                      </p>
+                      <p className="text-xs text-zinc-500">Gold</p>
+                    </div>
+                  </div>
+                  <p className="mt-4 text-lg font-bold text-zinc-100">{first.title}</p>
+                  <p className="text-sm text-zinc-400">{first.teamName}</p>
+                  <p className="mt-4 text-3xl font-black tabular-nums text-gradient">
+                    {hideScoresFromUi ? '—' : `${(first.score ?? 0).toFixed(1)}`}
+                    {!hideScoresFromUi && (
+                      <span className="text-lg font-semibold text-zinc-500"> pts</span>
+                    )}
+                  </p>
+                </div>
+              </div>
+              <div className="sm:col-start-3 sm:row-start-2 sm:self-end">
+                {third ? (
+                  <div className="relative w-full overflow-hidden rounded-3xl border border-orange-700/40 bg-gradient-to-b from-orange-950/55 via-zinc-900 to-zinc-950 p-6">
+                    <div className="flex items-center gap-2">
+                      <Medal className="h-8 w-8 text-amber-700" />
+                      <div>
+                        <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-zinc-400">
+                          Third
+                        </p>
+                        <p className="text-xs text-zinc-500">Bronze</p>
+                      </div>
+                    </div>
+                    <p className="mt-4 text-lg font-bold text-zinc-100">{third.title}</p>
+                    <p className="text-sm text-zinc-400">{third.teamName}</p>
+                    <p className="mt-4 text-3xl font-black tabular-nums text-gradient">
+                      {hideScoresFromUi ? '—' : `${(third.score ?? 0).toFixed(1)}`}
+                      {!hideScoresFromUi && (
+                        <span className="text-lg font-semibold text-zinc-500"> pts</span>
+                      )}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="hidden sm:block" />
+                )}
+              </div>
             </div>
           )}
 

@@ -1,19 +1,73 @@
-import { ArrowLeft, Upload } from 'lucide-react'
+import { ArrowLeft, Plus, Upload } from 'lucide-react'
 import { Link, useNavigate } from 'react-router-dom'
-import { useState } from 'react'
+import { FullScreenLoader } from '../components/ui/FullScreenLoader'
+import { useEffect, useMemo, useState } from 'react'
 import { useApp } from '../context/AppContext'
-import { saveCurrentEventMongo } from '../services/mongoApi'
+import {
+  activateEventMongo,
+  createHackathonEventMongo,
+  fetchCurrentEventMongo,
+  fetchEventsListMongo,
+  saveCurrentEventMongo,
+} from '../services/mongoApi'
 import { RubricBuilder } from '../components/admin/RubricBuilder'
 import { TrackManager } from '../components/admin/TrackManager'
 import { Button } from '../components/ui/Button'
+import type { EventSetup } from '../types/event'
 
 export function EventSetupPage() {
   const navigate = useNavigate()
-  const { eventSetup, setEventSetup, updateRubric, updateTracks, useApiBackend } =
-    useApp()
+  const {
+    eventSetup,
+    setEventSetup,
+    updateRubric,
+    updateTracks,
+    useApiBackend,
+    refreshFeed,
+  } = useApp()
   const [saveMsg, setSaveMsg] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const [eventRows, setEventRows] = useState<
+    { id: string; name: string; isCurrent: boolean }[]
+  >([])
+  const [eventsLoading, setEventsLoading] = useState(false)
+  const [newEventName, setNewEventName] = useState('')
+  const [switching, setSwitching] = useState(false)
+  const [createSuccess, setCreateSuccess] = useState(false)
   const e = eventSetup
+
+  const reloadActiveEvent = async () => {
+    const ev = await fetchCurrentEventMongo()
+    if (ev) setEventSetup(ev)
+  }
+
+  useEffect(() => {
+    if (!useApiBackend) return
+    let cancelled = false
+    setEventsLoading(true)
+    void fetchEventsListMongo()
+      .then((d) => {
+        if (cancelled) return
+        setEventRows(d.events.map((x) => ({ id: x.id, name: x.name, isCurrent: x.isCurrent })))
+      })
+      .catch(() => {
+        if (!cancelled) setEventRows([])
+      })
+      .finally(() => {
+        if (!cancelled) setEventsLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [useApiBackend])
+
+  const eventOptions = useMemo(() => {
+    const rows = [...eventRows]
+    if (e.id && !rows.some((r) => r.id === e.id)) {
+      rows.unshift({ id: e.id, name: e.name || 'Current', isCurrent: true })
+    }
+    return rows
+  }, [eventRows, e.id, e.name])
 
   const setBannerFile = (file: File | null) => {
     if (!file) {
@@ -32,6 +86,12 @@ export function EventSetupPage() {
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
+      {switching && <FullScreenLoader label="Creating event…" />}
+      {createSuccess && (
+        <div className="mb-6 rounded-2xl border border-emerald-500/40 bg-emerald-950/40 px-4 py-3 text-sm font-medium text-emerald-200">
+          Event created successfully. Redirecting…
+        </div>
+      )}
       <Link
         to="/admin"
         className="mb-6 inline-flex items-center gap-2 text-sm font-medium text-violet-400 hover:text-violet-300"
@@ -45,8 +105,108 @@ export function EventSetupPage() {
           Event setup
         </h1>
         <p className="mt-2 text-zinc-400">
-          Hackathon details, timeline, rubric, and tracks.
+          Each hackathon is its own event — teams, projects, and leaderboard use the
+          active event below.
         </p>
+
+        {useApiBackend && (
+          <div className="mt-6 space-y-4 rounded-2xl border border-zinc-800 bg-zinc-950/50 p-4">
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="block min-w-[200px] flex-1 text-sm font-medium text-zinc-300">
+                Active hackathon
+                <select
+                  className="input-dark mt-1.5 w-full"
+                  disabled={eventsLoading || switching}
+                  value={e.id ?? ''}
+                  onChange={(ev) => {
+                    const id = ev.target.value
+                    if (!id || id === e.id) return
+                    setSwitching(true)
+                    void (async () => {
+                      try {
+                        await activateEventMongo(id)
+                        await reloadActiveEvent()
+                        const list = await fetchEventsListMongo()
+                        setEventRows(
+                          list.events.map((x) => ({
+                            id: x.id,
+                            name: x.name,
+                            isCurrent: x.isCurrent,
+                          })),
+                        )
+                        await refreshFeed()
+                        setSaveMsg(null)
+                      } finally {
+                        setSwitching(false)
+                      }
+                    })()
+                  }}
+                >
+                  {!eventOptions.length && (
+                    <option value="">{eventsLoading ? 'Loading…' : 'No events yet'}</option>
+                  )}
+                  {eventOptions.map((row) => (
+                    <option key={row.id} value={row.id}>
+                      {row.name}
+                      {row.isCurrent ? ' (active)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="flex flex-wrap gap-2">
+                <input
+                  type="text"
+                  value={newEventName}
+                  onChange={(ev) => setNewEventName(ev.target.value)}
+                  placeholder="Name for new hackathon"
+                  className="input-dark min-w-[180px]"
+                  disabled={switching}
+                />
+                <Button
+                  size="sm"
+                  type="button"
+                  variant="secondary"
+                  disabled={switching}
+                  onClick={() => {
+                    void (async () => {
+                      setSwitching(true)
+                      try {
+                        await createHackathonEventMongo({
+                          name: newEventName.trim() || 'New hackathon',
+                          setAsCurrent: true,
+                        })
+                        setNewEventName('')
+                        await reloadActiveEvent()
+                        const list = await fetchEventsListMongo()
+                        setEventRows(
+                          list.events.map((x) => ({
+                            id: x.id,
+                            name: x.name,
+                            isCurrent: x.isCurrent,
+                          })),
+                        )
+                        await refreshFeed()
+                        setCreateSuccess(true)
+                        window.setTimeout(() => {
+                          setCreateSuccess(false)
+                          navigate('/admin')
+                        }, 850)
+                      } finally {
+                        setSwitching(false)
+                      }
+                    })()
+                  }}
+                >
+                  <Plus className="h-4 w-4" />
+                  New hackathon
+                </Button>
+              </div>
+            </div>
+            {switching && (
+              <p className="text-xs text-zinc-500">Switching event…</p>
+            )}
+          </div>
+        )}
       </header>
 
       <div className="space-y-8">
@@ -234,8 +394,8 @@ export function EventSetupPage() {
               setSaveMsg(null)
               if (useApiBackend) {
                 setSaving(true)
-                void saveCurrentEventMongo(eventSetup)
-                  .then(() => setSaveMsg('Event created in database.'))
+                void saveCurrentEventMongo(eventSetup as EventSetup)
+                  .then(() => setSaveMsg('Saved to database.'))
                   .then(() =>
                     window.setTimeout(() => {
                       navigate('/admin', { replace: true })
@@ -248,7 +408,7 @@ export function EventSetupPage() {
               }
             }}
           >
-            {saving ? 'Creating event…' : 'Create event'}
+            {saving ? 'Saving…' : 'Save event'}
           </Button>
         </div>
       </div>

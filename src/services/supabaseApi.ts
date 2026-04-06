@@ -6,14 +6,17 @@ export type LeaderboardVisibility = 'admin_only' | 'judges_only' | 'public'
 export type ProfileRow = {
   id: string
   email: string | null
+  username?: string | null
   full_name: string | null
-  role: 'admin' | 'judge' | 'team'
+  role: 'admin' | 'judge' | 'team' | 'participant'
   team_id: string | null
   approval_status: 'pending' | 'approved' | 'rejected'
   /** API mode only (Mongo users). */
   google_verified?: boolean
   /** API mode only (Mongo users). */
   password_set?: boolean
+  /** API mode: Google OAuth users must finish username + app password. */
+  needs_profile_setup?: boolean
 }
 
 type ProjectRow = {

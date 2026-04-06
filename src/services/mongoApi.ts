@@ -4,6 +4,16 @@ import type { EventSetup, InvitedJudge } from '../types/event'
 import { API_URL } from '../config/api'
 
 const TOKEN_KEY = 'hackathon_token'
+const EVENT_KEY = 'hackathon_event_id'
+
+export function getSelectedEventId(): string | null {
+  return localStorage.getItem(EVENT_KEY)
+}
+
+export function setSelectedEventId(id: string | null) {
+  if (id) localStorage.setItem(EVENT_KEY, id)
+  else localStorage.removeItem(EVENT_KEY)
+}
 
 export function getApiToken(): string | null {
   return localStorage.getItem(TOKEN_KEY)
@@ -12,6 +22,13 @@ export function getApiToken(): string | null {
 export function setApiToken(token: string | null) {
   if (token) localStorage.setItem(TOKEN_KEY, token)
   else localStorage.removeItem(TOKEN_KEY)
+}
+
+function withEventQuery(path: string): string {
+  const ev = getSelectedEventId()
+  if (!ev) return path
+  const sep = path.includes('?') ? '&' : '?'
+  return `${path}${sep}eventId=${encodeURIComponent(ev)}`
 }
 
 async function apiFetch<T>(
@@ -24,6 +41,8 @@ async function apiFetch<T>(
     ...(opts.headers as Record<string, string> | undefined),
   }
   if (t) headers.Authorization = `Bearer ${t}`
+  const ev = getSelectedEventId()
+  if (ev) headers['X-Hackathon-Event'] = ev
   const res = await fetch(`${API_URL}${path}`, { ...opts, headers })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) {
@@ -48,15 +67,39 @@ export async function mongoRegister(
   email: string,
   password: string,
   fullName: string,
+  username: string,
 ) {
   const data = await apiFetch<{ token: string; user: ProfileRow }>(
     '/api/auth/register',
     {
       method: 'POST',
-      body: JSON.stringify({ email, password, fullName }),
+      body: JSON.stringify({ email, password, fullName, username }),
     },
   )
   setApiToken(data.token)
+  return data.user
+}
+
+export async function mongoCheckEmailExists(email: string): Promise<boolean> {
+  try {
+    const data = await apiFetch<{ exists: boolean }>('/api/auth/check-email', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    })
+    return Boolean(data.exists)
+  } catch {
+    return false
+  }
+}
+
+export async function mongoCompleteProfile(payload: {
+  username: string
+  password: string
+}) {
+  const data = await apiFetch<{ user: ProfileRow }>('/api/auth/complete-profile', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
   return data.user
 }
 
@@ -76,11 +119,15 @@ export async function mongoSupabaseOAuthSync(accessToken: string) {
 export async function mongoSetPassword(payload: {
   password: string
   fullName?: string
+  username?: string
 }) {
-  const data = await apiFetch<{ user: ProfileRow }>('/api/auth/set-password', {
-    method: 'POST',
-    body: JSON.stringify(payload),
-  })
+  const data = await apiFetch<{ user: ProfileRow }>(
+    withEventQuery('/api/auth/set-password'),
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    },
+  )
   return data.user
 }
 
@@ -96,7 +143,8 @@ export async function mongoGoogleProfileSync(body: {
 
 export async function mongoFetchMe(): Promise<ProfileRow | null> {
   try {
-    const data = await apiFetch<{ user: ProfileRow }>('/api/auth/me')
+    const path = withEventQuery('/api/auth/me')
+    const data = await apiFetch<{ user: ProfileRow }>(path)
     return data.user
   } catch {
     return null
@@ -133,6 +181,73 @@ export async function updateAppSettingsMongo(patch: {
   })
 }
 
+export type BootstrapPayload = {
+  user: ProfileRow
+  settings: {
+    leaderboard_visibility: LeaderboardVisibility
+    winner_announced_at: string | null
+  }
+  events: {
+    id: string
+    name: string
+    lifecycleStatus: string
+    submissionEnd: string
+    createdAt: string | null
+  }[]
+  currentEventId: string | null
+  event: Record<string, unknown> | null
+  projects: Project[]
+  scores: Record<
+    string,
+    { total: number; byJudge: { judge: string; score: number; comment: string }[] }
+  >
+  myJudgeScores: {
+    project_id: string
+    criterion_scores: Record<string, number>
+    comment: string | null
+  }[]
+}
+
+export async function fetchBootstrapMongo(): Promise<BootstrapPayload | null> {
+  try {
+    const path = withEventQuery('/api/bootstrap')
+    return await apiFetch<BootstrapPayload>(path)
+  } catch {
+    return null
+  }
+}
+
+export async function fetchEventCatalogMongo() {
+  return apiFetch<{
+    events: {
+      id: string
+      name: string
+      lifecycleStatus: string
+      submissionEnd: string
+      createdAt: string | null
+    }[]
+  }>('/api/events/catalog')
+}
+
+export async function fetchEventDetailMongo(eventId: string) {
+  const data = await apiFetch<{ event: Record<string, unknown> }>(
+    `/api/events/${encodeURIComponent(eventId)}`,
+  )
+  return data.event
+}
+
+export async function fetchEventSummaryMongo(eventId: string) {
+  return apiFetch<{
+    event: Record<string, unknown>
+    teams: { id: string; name: string; status: string; memberCount: number }[]
+    projects: Project[]
+    scores: Record<
+      string,
+      { total: number; byJudge: { judge: string; score: number; comment: string }[] }
+    >
+  }>(`/api/events/${encodeURIComponent(eventId)}/summary`)
+}
+
 export async function fetchCurrentEventMongo(): Promise<EventSetup | null> {
   try {
     const data = await apiFetch<{ event: Record<string, unknown> | null }>(
@@ -141,6 +256,7 @@ export async function fetchCurrentEventMongo(): Promise<EventSetup | null> {
     const e = data.event
     if (!e) return null
     return {
+      id: typeof e.id === 'string' ? e.id : undefined,
       name: String(e.name ?? ''),
       tagline: String(e.tagline ?? ''),
       description: String(e.description ?? ''),
@@ -153,6 +269,7 @@ export async function fetchCurrentEventMongo(): Promise<EventSetup | null> {
       scoringMode: (e.scoringMode as EventSetup['scoringMode']) ?? 'rubric',
       rubric: Array.isArray(e.rubric) ? (e.rubric as EventSetup['rubric']) : [],
       tracks: Array.isArray(e.tracks) ? (e.tracks as string[]) : [],
+      lifecycleStatus: (e.lifecycleStatus as EventSetup['lifecycleStatus']) ?? 'active',
     }
   } catch {
     return null
@@ -160,19 +277,58 @@ export async function fetchCurrentEventMongo(): Promise<EventSetup | null> {
 }
 
 export async function saveCurrentEventMongo(setup: EventSetup) {
+  const { id: _id, ...rest } = setup
   await apiFetch('/api/events/current', {
     method: 'PUT',
-    body: JSON.stringify(setup),
+    body: JSON.stringify(rest),
   })
 }
 
+export type EventListRow = {
+  id: string
+  name: string
+  submissionEnd: string
+  createdAt: string | null
+  isCurrent: boolean
+}
+
+export async function fetchEventsListMongo() {
+  return apiFetch<{
+    currentEventId: string | null
+    events: EventListRow[]
+  }>('/api/events')
+}
+
+export async function createHackathonEventMongo(body: {
+  name?: string
+  setAsCurrent?: boolean
+}) {
+  const data = await apiFetch<{ event: Record<string, unknown> }>('/api/events', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
+  return data.event
+}
+
+export async function activateEventMongo(eventId: string) {
+  const data = await apiFetch<{ event: Record<string, unknown> }>(
+    `/api/events/${encodeURIComponent(eventId)}/activate`,
+    { method: 'POST' },
+  )
+  return data.event
+}
+
 export async function fetchFeedProjectsMongo(): Promise<Project[]> {
-  const data = await apiFetch<{ projects: Project[] }>('/api/projects')
+  const data = await apiFetch<{ projects: Project[] }>(
+    withEventQuery('/api/projects'),
+  )
   return data.projects ?? []
 }
 
 export async function fetchAllProjectsLeaderboardMongo(): Promise<Project[]> {
-  const data = await apiFetch<{ projects: Project[] }>('/api/projects/all')
+  const data = await apiFetch<{ projects: Project[] }>(
+    withEventQuery('/api/projects/all'),
+  )
   return data.projects ?? []
 }
 
@@ -187,7 +343,7 @@ export async function fetchLeaderboardAwaitingMongo(): Promise<
   LeaderboardAwaitingRow[]
 > {
   const data = await apiFetch<{ rows: LeaderboardAwaitingRow[] }>(
-    '/api/leaderboard/awaiting',
+    withEventQuery('/api/leaderboard/awaiting'),
   )
   return data.rows ?? []
 }
@@ -196,7 +352,7 @@ export async function fetchProjectForTeamMongo(
   teamId: string,
 ): Promise<Project | null> {
   const data = await apiFetch<{ project: Project | null }>(
-    `/api/projects/by-team/${teamId}`,
+    withEventQuery(`/api/projects/by-team/${teamId}`),
   )
   return data.project
 }
@@ -237,12 +393,22 @@ export async function updateProjectMongo(
   })
 }
 
-export async function createTeamMongo(name: string): Promise<string> {
+export async function createTeamMongo(
+  name: string,
+  eventId?: string | null,
+): Promise<string> {
   const data = await apiFetch<{ teamId: string }>('/api/teams', {
     method: 'POST',
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, eventId: eventId || undefined }),
   })
   return data.teamId
+}
+
+export async function inviteTeamMemberMongo(teamId: string, email: string) {
+  await apiFetch(`/api/teams/${encodeURIComponent(teamId)}/members`, {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  })
 }
 
 export async function approveProfileMongo(userId: string) {
@@ -299,7 +465,11 @@ export type AdminTeamRow = {
   }[]
 }
 
-export async function fetchAdminTeamsMongo() {
+export async function fetchAdminTeamsMongo(eventId?: string | null) {
+  const q =
+    eventId && eventId.length > 0
+      ? `/api/admin/teams?eventId=${encodeURIComponent(eventId)}`
+      : '/api/admin/teams'
   return apiFetch<{
     teams: AdminTeamRow[]
     stats: {
@@ -307,7 +477,28 @@ export async function fetchAdminTeamsMongo() {
       totalTeamRoleUsers: number
       usersWithTeams: number
     }
-  }>('/api/admin/teams')
+  }>(q)
+}
+
+export async function fetchAdminUserDetailMongo(userId: string) {
+  return apiFetch<{
+    user: ProfileRow & {
+      createdAt?: string
+      updatedAt?: string
+      app_password_configured?: boolean
+    }
+  }>(`/api/admin/users/${encodeURIComponent(userId)}`)
+}
+
+export async function patchEventLifecycleMongo(
+  eventId: string,
+  patch: Partial<{ lifecycleStatus: string } & Record<string, unknown>>,
+) {
+  const data = await apiFetch<{ event: Record<string, unknown> }>(
+    `/api/events/by-id/${encodeURIComponent(eventId)}`,
+    { method: 'PATCH', body: JSON.stringify(patch) },
+  )
+  return data.event
 }
 
 export type MyTeamDetail = {
@@ -320,7 +511,7 @@ export type MyTeamDetail = {
 }
 
 export async function fetchMyTeamDetailMongo() {
-  return apiFetch<{ team: MyTeamDetail | null }>('/api/teams/mine')
+  return apiFetch<{ team: MyTeamDetail | null }>(withEventQuery('/api/teams/mine'))
 }
 
 export async function fetchEmailStatsMongo() {
@@ -340,7 +531,7 @@ export async function fetchScoresMapMongo() {
       string,
       { total: number; byJudge: { judge: string; score: number; comment: string }[] }
     >
-  }>('/api/scores/map')
+  }>(withEventQuery('/api/scores/map'))
   const m = new Map<
     string,
     { total: number; byJudge: { judge: string; score: number; comment: string }[] }

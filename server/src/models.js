@@ -3,6 +3,8 @@ import mongoose from 'mongoose'
 const userSchema = new mongoose.Schema(
   {
     email: { type: String, required: true, unique: true, lowercase: true, trim: true },
+    /** Unique handle (required for new signups). Omit on legacy documents until set. */
+    username: { type: String, lowercase: true, trim: true, unique: true, sparse: true },
     passwordHash: { type: String, default: '' },
     fullName: { type: String, default: '' },
     role: {
@@ -27,9 +29,22 @@ const teamSchema = new mongoose.Schema(
     status: { type: String, enum: ['pending', 'approved'], default: 'pending' },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     eventId: { type: mongoose.Schema.Types.ObjectId, ref: 'HackathonEvent', required: true },
+    /** Up to 4 member user ids (must be existing platform users). */
+    memberIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   },
   { timestamps: true },
 )
+
+/** One user ↔ at most one team per event (allows same user in different events). */
+const teamMemberSchema = new mongoose.Schema(
+  {
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    teamId: { type: mongoose.Schema.Types.ObjectId, ref: 'Team', required: true },
+    eventId: { type: mongoose.Schema.Types.ObjectId, ref: 'HackathonEvent', required: true },
+  },
+  { timestamps: true },
+)
+teamMemberSchema.index({ userId: 1, eventId: 1 }, { unique: true })
 
 const projectSchema = new mongoose.Schema(
   {
@@ -76,6 +91,12 @@ const hackathonEventSchema = new mongoose.Schema(
     scoringMode: { type: String, enum: ['rubric', 'stars'], default: 'rubric' },
     rubric: { type: [rubricCriterionSchema], default: [] },
     tracks: { type: [String], default: [] },
+    /** Several events may be `active` at the same time. */
+    lifecycleStatus: {
+      type: String,
+      enum: ['upcoming', 'active', 'completed'],
+      default: 'active',
+    },
   },
   { timestamps: true },
 )
@@ -129,6 +150,7 @@ scoreSchema.index({ projectId: 1, judgeId: 1 }, { unique: true })
 
 export const User = mongoose.model('User', userSchema)
 export const Team = mongoose.model('Team', teamSchema)
+export const TeamMember = mongoose.model('TeamMember', teamMemberSchema)
 export const Project = mongoose.model('Project', projectSchema)
 export const HackathonEvent = mongoose.model('HackathonEvent', hackathonEventSchema)
 export const AppSettings = mongoose.model('AppSettings', appSettingsSchema)

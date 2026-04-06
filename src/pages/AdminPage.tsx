@@ -21,6 +21,7 @@ import {
   approveProfileMongo,
   type AdminTeamRow,
   fetchAdminTeamsMongo,
+  fetchAdminUserDetailMongo,
   fetchEmailStatsMongo,
   fetchPendingProfilesMongo,
 } from '../services/mongoApi'
@@ -48,7 +49,12 @@ export function AdminPage() {
     totalAllowed: number
     registeredCount: number
     notRegisteredCount: number
-    allAccounts?: { email: string; role: string; approvalStatus: string }[]
+    allAccounts?: {
+      id?: string
+      email: string
+      role: string
+      approvalStatus: string
+    }[]
   } | null>(null)
   const [adminTeams, setAdminTeams] = useState<AdminTeamRow[]>([])
   const [teamStats, setTeamStats] = useState<{
@@ -57,6 +63,14 @@ export function AdminPage() {
     usersWithTeams: number
   } | null>(null)
   const [teamDetail, setTeamDetail] = useState<AdminTeamRow | null>(null)
+  const [userDetail, setUserDetail] = useState<{
+    email: string | null
+    username?: string | null
+    full_name?: string | null
+    role: string
+    app_password_configured?: boolean
+    approval_status?: string
+  } | null>(null)
 
   useEffect(() => {
     if (!supabaseMode && !useApiBackend) return
@@ -150,7 +164,7 @@ export function AdminPage() {
       <header className="mb-10 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-zinc-100">
-            Admin
+            Dashboard
           </h1>
           <p className="mt-2 text-zinc-400">
             Configure the hackathon, invite judges, and manage admins.
@@ -223,14 +237,31 @@ export function AdminPage() {
               <div className="mt-3 max-h-56 overflow-y-auto rounded-xl border border-zinc-800 bg-zinc-950/50">
                 <ul className="divide-y divide-zinc-800 text-sm">
                   {emailStats.allAccounts.map((a) => (
-                    <li
-                      key={a.email}
-                      className="flex flex-wrap items-center justify-between gap-2 px-3 py-2"
-                    >
-                      <span className="font-mono text-xs text-zinc-300">{a.email}</span>
-                      <span className="text-xs text-zinc-500">
-                        {a.role} · {a.approvalStatus}
-                      </span>
+                    <li key={a.id ?? a.email}>
+                      <button
+                        type="button"
+                        className="flex w-full flex-wrap items-center justify-between gap-2 px-3 py-2 text-left hover:bg-zinc-800/60"
+                        onClick={() => {
+                          void (async () => {
+                            try {
+                              if (!a.id) throw new Error('no id')
+                              const d = await fetchAdminUserDetailMongo(a.id)
+                              setUserDetail(d.user)
+                            } catch {
+                              setUserDetail({
+                                email: a.email,
+                                role: a.role,
+                                approval_status: a.approvalStatus,
+                              })
+                            }
+                          })()
+                        }}
+                      >
+                        <span className="font-mono text-xs text-zinc-300">{a.email}</span>
+                        <span className="text-xs text-zinc-500">
+                          {a.role} · {a.approvalStatus}
+                        </span>
+                      </button>
                     </li>
                   ))}
                 </ul>
@@ -301,42 +332,31 @@ export function AdminPage() {
         </section>
       )}
 
-      <div className="grid gap-8 lg:grid-cols-2">
-        <section className="surface-card rounded-[var(--radius-lg)] p-6">
-          <h2 className="flex items-center gap-2 text-lg font-semibold text-zinc-100">
-            <Settings2 className="h-5 w-5 text-violet-400" />
-            Hackathon summary
-          </h2>
-          <p className="mt-1 text-sm text-zinc-400">
-            Full editing lives on Event setup — name:{' '}
-            <span className="text-zinc-200">{eventSetup.name}</span>
-          </p>
-          <div className="mt-6">
-            <Link
-              to="/admin/event-setup"
-              className="text-sm font-medium text-violet-400 hover:underline"
-            >
-              Open event setup (banner, timeline, rubric, tracks) →
-            </Link>
-          </div>
-        </section>
-
-        <section className="surface-card rounded-[var(--radius-lg)] p-6">
-          <h2 className="text-lg font-semibold text-zinc-100">Scoring setup</h2>
-          <p className="mt-1 text-sm text-zinc-400">
-            Scoring mode is now configured in Event setup, so each event can define its
-            own judging style.
-          </p>
-          <div className="mt-6">
-            <Link
-              to="/admin/event-setup"
-              className="text-sm font-medium text-violet-400 hover:underline"
-            >
-              Open Event setup to change scoring mode →
-            </Link>
-          </div>
-        </section>
-      </div>
+      <section className="mb-8 surface-card rounded-[var(--radius-lg)] p-6">
+        <h2 className="flex items-center gap-2 text-lg font-semibold text-zinc-100">
+          <Settings2 className="h-5 w-5 text-violet-400" />
+          Hackathons & events
+        </h2>
+        <p className="mt-1 text-sm text-zinc-400">
+          Active hackathon:{' '}
+          <span className="text-zinc-200">{eventSetup.name}</span>
+          {useApiBackend && (
+            <>
+              {' '}
+              — You can run multiple events at once; switch or create new ones in Event
+              setup.
+            </>
+          )}
+        </p>
+        <div className="mt-4">
+          <Link
+            to="/admin/event-setup"
+            className="text-sm font-medium text-violet-400 hover:underline"
+          >
+            Event setup (banner, timeline, scoring mode, rubric, tracks) →
+          </Link>
+        </div>
+      </section>
 
       <div className="mt-8 grid gap-8 lg:grid-cols-2">
         <section className="surface-card rounded-[var(--radius-lg)] p-6">
@@ -445,6 +465,9 @@ export function AdminPage() {
                 <Users className="h-5 w-5 text-violet-400" />
                 Teams & accounts
               </h2>
+              <p className="mt-1 text-xs text-zinc-500">
+                Team is a group; account is an individual login. One team can have multiple accounts.
+              </p>
               {useApiBackend && teamStats && (
                 <p className="mt-1 text-xs text-zinc-500">
                   {teamStats.totalTeams} team(s) · {teamStats.usersWithTeams} user(s) on a
@@ -520,6 +543,63 @@ export function AdminPage() {
           )}
         </section>
       </div>
+
+      {userDetail && (
+        <div
+          className="fixed inset-0 z-[100] flex items-end justify-center bg-black/70 p-4 sm:items-center"
+          role="dialog"
+          aria-modal
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setUserDetail(null)
+          }}
+        >
+          <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-zinc-700 bg-zinc-950 p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <h3 className="text-lg font-semibold text-zinc-100">User details</h3>
+              <button
+                type="button"
+                className="rounded-lg p-2 text-zinc-500 hover:bg-zinc-800 hover:text-zinc-200"
+                onClick={() => setUserDetail(null)}
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <dl className="mt-4 space-y-3 text-sm">
+              <div>
+                <dt className="text-zinc-500">Email</dt>
+                <dd className="mt-1 font-mono text-zinc-200">{userDetail.email ?? '—'}</dd>
+              </div>
+              <div>
+                <dt className="text-zinc-500">Username</dt>
+                <dd className="mt-1 text-zinc-200">{userDetail.username ?? '—'}</dd>
+              </div>
+              <div>
+                <dt className="text-zinc-500">Display name</dt>
+                <dd className="mt-1 text-zinc-200">{userDetail.full_name ?? '—'}</dd>
+              </div>
+              <div>
+                <dt className="text-zinc-500">Role</dt>
+                <dd className="mt-1 capitalize text-zinc-200">{userDetail.role}</dd>
+              </div>
+              <div>
+                <dt className="text-zinc-500">Approval</dt>
+                <dd className="mt-1 text-zinc-200">
+                  {userDetail.approval_status ?? '—'}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-zinc-500">App password (admin view)</dt>
+                <dd className="mt-1 text-zinc-300">
+                  {userDetail.app_password_configured
+                    ? 'Configured (stored as a secure hash — not displayable)'
+                    : 'Not set'}
+                </dd>
+              </div>
+            </dl>
+          </div>
+        </div>
+      )}
 
       {teamDetail && (
         <div

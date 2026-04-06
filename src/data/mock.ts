@@ -1,4 +1,8 @@
-export type Role = 'admin' | 'judge' | 'team'
+export type Role = 'admin' | 'judge' | 'team' | 'participant'
+
+export function isParticipantRole(r: Role | string | null | undefined): boolean {
+  return r === 'team' || r === 'participant'
+}
 
 export type Project = {
   id: string

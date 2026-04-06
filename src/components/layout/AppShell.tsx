@@ -13,6 +13,7 @@ import {
   Users,
 } from 'lucide-react'
 import clsx from 'clsx'
+import { isParticipantRole } from '../../data/mock'
 import { useApp } from '../../context/AppContext'
 import { Badge } from '../ui/Badge'
 import { FloatingAppFrame } from './FloatingAppFrame'
@@ -20,8 +21,8 @@ import { Button } from '../ui/Button'
 import { mongoSetPassword } from '../../services/mongoApi'
 
 const navJudge = [
-  { to: '/judge/feed', label: 'Dashboard', icon: LayoutGrid },
-  { to: '/judge/dashboard', label: 'Progress', icon: BarChart3 },
+  { to: '/judge/dashboard', label: 'Dashboard', icon: LayoutGrid },
+  { to: '/judge/feed', label: 'Projects', icon: BarChart3 },
   { to: '/leaderboard', label: 'Leaderboard', icon: Trophy },
 ]
 
@@ -114,14 +115,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   const items =
-    role === 'admin' ? navAdmin : role === 'team' ? navTeam : navJudge
+    role === 'admin' ? navAdmin : isParticipantRole(role) ? navTeam : navJudge
 
   const needsSetup = useMemo(() => {
     if (!useApiBackend) return false
     if (!profile) return false
-    const missingPass = profile.password_set === false
-    const missingGoogle = profile.google_verified === false
-    return Boolean(missingPass || missingGoogle)
+    return Boolean(profile.needs_profile_setup)
   }, [useApiBackend, profile])
 
   useEffect(() => {
@@ -141,7 +140,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
             <Link
               to={
-                role === 'admin' ? '/admin' : role === 'team' ? '/team' : '/judge/feed'
+                role === 'admin'
+                  ? '/admin'
+                  : isParticipantRole(role)
+                    ? '/team'
+                    : '/judge/dashboard'
               }
               className="flex items-center gap-2 font-semibold tracking-tight text-zinc-100"
             >
@@ -192,13 +195,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {party && <ConfettiBurst />}
 
         {winnerToastOpen && (
-          <div
-            className={clsx(
-              'fixed right-4 top-16 z-[90] w-[min(92vw,420px)] transition-all duration-300',
-              'translate-y-0 opacity-100',
-            )}
-          >
-            <div className="relative overflow-hidden rounded-2xl border border-violet-400/35 bg-gradient-to-br from-violet-950/95 via-zinc-950/98 to-zinc-950 p-4 shadow-[0_0_44px_rgba(124,58,237,0.45)] backdrop-blur-md">
+          <div className="fixed right-4 top-16 z-[90] w-[min(92vw,420px)]">
+            <div className="hackathon-winner-banner relative overflow-hidden rounded-2xl border border-violet-400/35 bg-gradient-to-br from-violet-950/95 via-zinc-950/98 to-zinc-950 p-4 shadow-[0_0_44px_rgba(124,58,237,0.45)] backdrop-blur-md">
               <div className="pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full bg-violet-500/25 blur-2xl" />
               <p className="flex items-center gap-2 pr-8 text-sm font-bold uppercase tracking-wider text-violet-200">
                 <Sparkles className="h-4 w-4 text-amber-300" />
@@ -219,61 +217,65 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 Finish account setup
               </p>
               <p className="mt-2 text-sm text-zinc-300">
-                Your account must have both an app password and Google verification.
+                Choose a unique username and create your app password to finish signup.
               </p>
 
-              {profile?.password_set === false && (
-                <div className="mt-5 space-y-3">
-                  <label className="block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400">
-                    Display name (optional)
-                    <input
-                      value={setupName}
-                      onChange={(e) => setSetupName(e.target.value)}
-                      className="input-dark mt-2 w-full rounded-xl border-white/10 bg-zinc-950/70"
-                      placeholder="Rishi"
-                      disabled={setupBusy}
-                    />
-                  </label>
-                  <label className="block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400">
-                    Create app password
-                    <input
-                      type="password"
-                      value={setupPass}
-                      onChange={(e) => setSetupPass(e.target.value)}
-                      className="input-dark mt-2 w-full rounded-xl border-white/10 bg-zinc-950/70"
-                      placeholder="••••••••"
-                      disabled={setupBusy}
-                    />
-                  </label>
-                  <Button
-                    size="sm"
-                    className="w-full rounded-xl"
-                    disabled={setupBusy || setupPass.length < 6}
-                    onClick={() => {
-                      void (async () => {
-                        setSetupErr(null)
-                        setSetupBusy(true)
-                        try {
-                          await mongoSetPassword({
-                            password: setupPass,
-                            fullName: setupName.trim() || undefined,
-                          })
-                          setSetupPass('')
-                          await refreshProfile()
-                        } catch (e) {
-                          setSetupErr(
-                            e instanceof Error ? e.message : 'Could not set password.',
-                          )
-                        } finally {
-                          setSetupBusy(false)
-                        }
-                      })()
-                    }}
-                  >
-                    {setupBusy ? 'Saving…' : 'Save password'}
-                  </Button>
-                </div>
-              )}
+              <div className="mt-5 space-y-3">
+                <label className="block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400">
+                  Username
+                  <input
+                    value={setupName}
+                    onChange={(e) => setSetupName(e.target.value)}
+                    className="input-dark mt-2 w-full rounded-xl border-white/10 bg-zinc-950/70"
+                    placeholder="your_handle"
+                    autoComplete="username"
+                    disabled={setupBusy}
+                  />
+                </label>
+                <label className="block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400">
+                  App password
+                  <input
+                    type="password"
+                    value={setupPass}
+                    onChange={(e) => setSetupPass(e.target.value)}
+                    className="input-dark mt-2 w-full rounded-xl border-white/10 bg-zinc-950/70"
+                    placeholder="••••••••"
+                    disabled={setupBusy}
+                  />
+                </label>
+                <Button
+                  size="sm"
+                  className="w-full rounded-xl"
+                  disabled={
+                    setupBusy ||
+                    setupPass.length < 6 ||
+                    !/^[a-z0-9_]{3,24}$/.test(setupName.trim().toLowerCase())
+                  }
+                  onClick={() => {
+                    void (async () => {
+                      setSetupErr(null)
+                      setSetupBusy(true)
+                      try {
+                        await mongoSetPassword({
+                          password: setupPass,
+                          username: setupName.trim().toLowerCase(),
+                        })
+                        setSetupPass('')
+                        setSetupName('')
+                        await refreshProfile()
+                      } catch (e) {
+                        setSetupErr(
+                          e instanceof Error ? e.message : 'Could not set password.',
+                        )
+                      } finally {
+                        setSetupBusy(false)
+                      }
+                    })()
+                  }}
+                >
+                  {setupBusy ? 'Saving…' : 'Save and continue'}
+                </Button>
+              </div>
 
               {profile?.google_verified === false && (
                 <div className="mt-5">
@@ -284,10 +286,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     disabled={setupBusy}
                     onClick={() => void signInWithGoogle()}
                   >
-                    Verify with Google
+                    Link Google account
                   </Button>
                   <p className="mt-2 text-xs text-zinc-500">
-                    This will open Google sign-in and return you here.
+                    Optional: link Google to the same email you used to sign in.
                   </p>
                 </div>
               )}

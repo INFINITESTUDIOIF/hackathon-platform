@@ -10,6 +10,7 @@ import { buttonClass } from '../components/ui/buttonClass'
 import { ScoringPanel } from '../components/scoring/ScoringPanel'
 import { fetchProjectById } from '../services/supabaseApi'
 import { fetchProjectByIdMongo } from '../services/mongoApi'
+import { isParticipantRole } from '../data/mock'
 import type { Project } from '../data/mock'
 
 export function ProjectDetailPage() {
@@ -18,7 +19,11 @@ export function ProjectDetailPage() {
   const [project, setProject] = useState<Project | null>(null)
   const [loading, setLoading] = useState(feedUsesDatabase)
 
-  const home = role === 'admin' ? '/admin' : role === 'team' ? '/team' : '/judge/feed'
+  const home = role === 'admin'
+    ? '/admin'
+    : isParticipantRole(role)
+      ? '/team'
+      : '/judge/dashboard'
 
   useEffect(() => {
     if (!id) return

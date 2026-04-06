@@ -1,4 +1,5 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { isParticipantRole } from './data/mock'
 import { AppProvider, useApp } from './context/AppContext'
 import { ToastProvider } from './context/ToastContext'
 import { AppShell } from './components/layout/AppShell'
@@ -15,6 +16,7 @@ import { TeamPage } from './pages/TeamPage'
 import { PendingApprovalPage } from './pages/PendingApprovalPage'
 import { TeamRegisterPage } from './pages/TeamRegisterPage'
 import { ProjectSubmitPage } from './pages/ProjectSubmitPage'
+import { EventDetailPage } from './pages/EventDetailPage'
 
 function RequireAuthOnly({ children }: { children: React.ReactNode }) {
   const { authenticated } = useApp()
@@ -43,7 +45,7 @@ function RequireApproved({ children }: { children: React.ReactNode }) {
     }
     if (!profile) return <Navigate to="/auth" replace />
     if (profile.role === 'admin') return <>{children}</>
-    if (profile.role === 'team' && !profile.team_id) {
+    if (isParticipantRole(profile.role) && !profile.team_id) {
       return <Navigate to="/team/register" replace />
     }
     if (profile.approval_status !== 'approved') {
@@ -61,7 +63,7 @@ function RequireApproved({ children }: { children: React.ReactNode }) {
   }
   if (!profile) return <Navigate to="/auth" replace />
   if (profile.role === 'admin') return <>{children}</>
-  if (profile.role === 'team' && !profile.team_id) {
+  if (isParticipantRole(profile.role) && !profile.team_id) {
     return <Navigate to="/team/register" replace />
   }
   if (profile.approval_status !== 'approved') {
@@ -79,23 +81,41 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 }
 
 function RequireAdmin({ children }: { children: React.ReactNode }) {
-  const { authenticated, role } = useApp()
+  const { authenticated, role, profile } = useApp()
   if (!authenticated) return <Navigate to="/auth" replace />
-  if (role !== 'admin') return <Navigate to="/" replace />
+  if (role !== 'admin' && profile?.role !== 'admin') {
+    return <Navigate to="/" replace />
+  }
   return <>{children}</>
 }
 
 function RequireJudge({ children }: { children: React.ReactNode }) {
-  const { authenticated, role } = useApp()
+  const { authenticated, role, profile } = useApp()
   if (!authenticated) return <Navigate to="/auth" replace />
-  if (role !== 'judge') return <Navigate to="/" replace />
+  if (role === 'admin' || profile?.role === 'admin') {
+    return <Navigate to="/" replace />
+  }
+  if (isParticipantRole(role) || isParticipantRole(profile?.role ?? null)) {
+    return <Navigate to="/" replace />
+  }
+  if (role !== 'judge' && profile?.role !== 'judge') {
+    return <Navigate to="/" replace />
+  }
   return <>{children}</>
 }
 
 function RequireTeam({ children }: { children: React.ReactNode }) {
-  const { authenticated, role } = useApp()
+  const { authenticated, role, profile } = useApp()
   if (!authenticated) return <Navigate to="/auth" replace />
-  if (role !== 'team') return <Navigate to="/" replace />
+  if (role === 'admin' || profile?.role === 'admin') {
+    return <Navigate to="/" replace />
+  }
+  if (role === 'judge' || profile?.role === 'judge') {
+    return <Navigate to="/" replace />
+  }
+  if (!isParticipantRole(role) && !isParticipantRole(profile?.role ?? null)) {
+    return <Navigate to="/" replace />
+  }
   return <>{children}</>
 }
 
@@ -120,21 +140,21 @@ function HomeRedirect() {
     }
     if (!profile) return <Navigate to="/auth" replace />
     if (profile.role === 'admin') return <Navigate to="/admin" replace />
-    if (profile.role === 'team' && !profile.team_id) {
+    if (isParticipantRole(profile.role) && !profile.team_id) {
       return <Navigate to="/team/register" replace />
     }
     if (profile.approval_status !== 'approved') {
       return <Navigate to="/pending-approval" replace />
     }
-    if (profile.role === 'team') return <Navigate to="/team" replace />
-    return <Navigate to="/judge/feed" replace />
+    if (isParticipantRole(profile.role)) return <Navigate to="/team" replace />
+    return <Navigate to="/judge/dashboard" replace />
   }
 
   if (supabaseMode) {
     if (demoPasswordAuth) {
       if (role === 'admin') return <Navigate to="/admin" replace />
-      if (role === 'team') return <Navigate to="/team" replace />
-      return <Navigate to="/judge/feed" replace />
+      if (isParticipantRole(role)) return <Navigate to="/team" replace />
+      return <Navigate to="/judge/dashboard" replace />
     }
     if (profileLoading) {
       return (
@@ -143,19 +163,19 @@ function HomeRedirect() {
     }
     if (!profile) return <Navigate to="/auth" replace />
     if (profile.role === 'admin') return <Navigate to="/admin" replace />
-    if (profile.role === 'team' && !profile.team_id) {
+    if (isParticipantRole(profile.role) && !profile.team_id) {
       return <Navigate to="/team/register" replace />
     }
     if (profile.approval_status !== 'approved') {
       return <Navigate to="/pending-approval" replace />
     }
-    if (profile.role === 'team') return <Navigate to="/team" replace />
-    return <Navigate to="/judge/feed" replace />
+    if (isParticipantRole(profile.role)) return <Navigate to="/team" replace />
+    return <Navigate to="/judge/dashboard" replace />
   }
 
   if (role === 'admin') return <Navigate to="/admin" replace />
-  if (role === 'team') return <Navigate to="/team" replace />
-  return <Navigate to="/judge/feed" replace />
+  if (isParticipantRole(role)) return <Navigate to="/team" replace />
+  return <Navigate to="/judge/dashboard" replace />
 }
 
 function AppRoutes() {
@@ -223,6 +243,14 @@ function AppRoutes() {
         element={
           <RequireAuth>
             <LeaderboardPage />
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/events/:id"
+        element={
+          <RequireAuth>
+            <EventDetailPage />
           </RequireAuth>
         }
       />

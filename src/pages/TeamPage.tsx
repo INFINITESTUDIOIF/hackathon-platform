@@ -10,16 +10,38 @@ import { buttonClass } from '../components/ui/buttonClass'
 import { useApp } from '../context/AppContext'
 import { fetchProjectForTeam } from '../services/supabaseApi'
 import {
+  fetchEventCatalogMongo,
   fetchMyTeamDetailMongo,
   fetchProjectForTeamMongo,
+  setSelectedEventId,
+  getSelectedEventId,
   type MyTeamDetail,
 } from '../services/mongoApi'
 
 /** Participant view — demo team or Supabase team project. */
 export function TeamPage() {
-  const { profile, supabaseMode, useApiBackend, eventSetup } = useApp()
+  const { profile, supabaseMode, useApiBackend, eventSetup, refreshProfile } =
+    useApp()
   const [project, setProject] = useState<Project | null>(null)
   const [myTeam, setMyTeam] = useState<MyTeamDetail | null>(null)
+  const [eventCatalog, setEventCatalog] = useState<
+    { id: string; name: string; lifecycleStatus: string }[]
+  >([])
+
+  useEffect(() => {
+    if (!useApiBackend) return
+    let cancelled = false
+    void fetchEventCatalogMongo()
+      .then((d) => {
+        if (!cancelled) setEventCatalog(d.events ?? [])
+      })
+      .catch(() => {
+        if (!cancelled) setEventCatalog([])
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [useApiBackend])
 
   useEffect(() => {
     if (useApiBackend && profile?.team_id) {
@@ -66,7 +88,51 @@ export function TeamPage() {
   return (
     <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
       <header className="mb-8">
-        <Badge variant="accent">Your team</Badge>
+        <h1 className="text-2xl font-bold tracking-tight text-zinc-100">Dashboard</h1>
+        {useApiBackend && eventCatalog.length > 0 && (
+          <div className="mt-4 rounded-2xl border border-zinc-800 bg-zinc-950/50 p-4">
+            <p className="text-xs font-semibold uppercase tracking-wider text-zinc-500">
+              Hackathons
+            </p>
+            <label className="mt-2 block text-sm text-zinc-300">
+              Context for teams & submissions
+              <select
+                className="input-dark mt-1.5 w-full"
+                value={
+                  getSelectedEventId() ??
+                  eventCatalog[0]?.id ??
+                  ''
+                }
+                onChange={(ev) => {
+                  const v = ev.target.value
+                  setSelectedEventId(v || null)
+                  void refreshProfile()
+                }}
+              >
+                {eventCatalog.map((ev) => (
+                  <option key={ev.id} value={ev.id}>
+                    {ev.name} ({ev.lifecycleStatus})
+                  </option>
+                ))}
+              </select>
+            </label>
+            <ul className="mt-3 flex flex-wrap gap-2 text-sm">
+              {eventCatalog.map((ev) => (
+                <li key={ev.id}>
+                  <Link
+                    to={`/events/${ev.id}`}
+                    className="rounded-lg border border-zinc-700 px-2 py-1 text-zinc-300 hover:border-violet-500/50 hover:text-violet-300"
+                  >
+                    {ev.name} →
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <Badge variant="accent" className="mt-4 inline-flex">
+          Your team
+        </Badge>
         {profile?.email && (
           <p className="mt-2 text-sm text-zinc-400">
             You are signed in as{' '}
