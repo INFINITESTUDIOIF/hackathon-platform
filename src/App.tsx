@@ -1,181 +1,85 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
-import { isParticipantRole } from './data/mock'
 import { AppProvider, useApp } from './context/AppContext'
 import { ToastProvider } from './context/ToastContext'
 import { AppShell } from './components/layout/AppShell'
 import { AuthPage } from './pages/AuthPage'
 import { AuthCallbackPage } from './pages/AuthCallbackPage'
-import { JudgeFeedPage } from './pages/JudgeFeedPage'
-import { JudgeDashboardPage } from './pages/JudgeDashboardPage'
-import { ScoringPage } from './pages/ScoringPage'
-import { ProjectDetailPage } from './pages/ProjectDetailPage'
-import { LeaderboardPage } from './pages/LeaderboardPage'
-import { AdminPage } from './pages/AdminPage'
-import { EventSetupPage } from './pages/EventSetupPage'
-import { TeamPage } from './pages/TeamPage'
 import { PendingApprovalPage } from './pages/PendingApprovalPage'
-import { TeamRegisterPage } from './pages/TeamRegisterPage'
-import { ProjectSubmitPage } from './pages/ProjectSubmitPage'
-import { EventDetailPage } from './pages/EventDetailPage'
+import { OnboardingPage } from './pages/OnboardingPage'
+import { UserDashboardPage } from './pages/UserDashboardPage'
+import { UserEventPage } from './pages/UserEventPage'
+import { JudgeHomePage } from './pages/JudgeHomePage'
+import { JudgeEventPage } from './pages/JudgeEventPage'
+import { AdminDashboardPage } from './pages/AdminDashboardPage'
+import { AdminEventPage } from './pages/AdminEventPage'
 
 function RequireAuthOnly({ children }: { children: React.ReactNode }) {
-  const { authenticated } = useApp()
-  if (!authenticated) return <Navigate to="/auth" replace />
-  return <>{children}</>
-}
-
-function RequireApproved({ children }: { children: React.ReactNode }) {
-  const {
-    supabaseMode,
-    useApiBackend,
-    profile,
-    profileLoading,
-    authenticated,
-    demoPasswordAuth,
-  } = useApp()
-  if (!authenticated) return <Navigate to="/auth" replace />
-
-  if (useApiBackend) {
-    if (profileLoading) {
-      return (
-        <div className="p-12 text-center text-sm text-zinc-400">
-          Loading your profile…
-        </div>
-      )
-    }
-    if (!profile) return <Navigate to="/auth" replace />
-    if (profile.role === 'admin') return <>{children}</>
-    if (isParticipantRole(profile.role) && !profile.team_id) {
-      return <Navigate to="/team/register" replace />
-    }
-    if (profile.approval_status !== 'approved') {
-      return <Navigate to="/pending-approval" replace />
-    }
-    return <>{children}</>
-  }
-
-  if (!supabaseMode) return <>{children}</>
-  if (demoPasswordAuth) return <>{children}</>
-  if (profileLoading) {
-    return (
-      <div className="p-12 text-center text-sm text-zinc-400">Loading your profile…</div>
-    )
-  }
-  if (!profile) return <Navigate to="/auth" replace />
-  if (profile.role === 'admin') return <>{children}</>
-  if (isParticipantRole(profile.role) && !profile.team_id) {
-    return <Navigate to="/team/register" replace />
-  }
-  if (profile.approval_status !== 'approved') {
-    return <Navigate to="/pending-approval" replace />
-  }
+  const { session, loading } = useApp()
+  if (loading) return null
+  if (!session) return <Navigate to="/auth" replace />
   return <>{children}</>
 }
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   return (
     <RequireAuthOnly>
-      <RequireApproved>{children}</RequireApproved>
+      {children}
     </RequireAuthOnly>
   )
 }
 
 function RequireAdmin({ children }: { children: React.ReactNode }) {
-  const { authenticated, role, profile } = useApp()
-  if (!authenticated) return <Navigate to="/auth" replace />
-  if (role !== 'admin' && profile?.role !== 'admin') {
+  const { profile, loading, profileReady } = useApp()
+  if (loading || !profileReady) return null
+  // Admins should NOT be redirected to onboarding if profile is missing, 
+  // they are handled by the email-based detection in AppContext.
+  if (!profile) return <Navigate to="/auth" replace />
+  if (profile.role !== 'admin' && profile.role !== 'main_admin') {
     return <Navigate to="/" replace />
   }
   return <>{children}</>
 }
 
 function RequireJudge({ children }: { children: React.ReactNode }) {
-  const { authenticated, role, profile } = useApp()
-  if (!authenticated) return <Navigate to="/auth" replace />
-  if (role === 'admin' || profile?.role === 'admin') {
+  const { profile, loading, profileReady } = useApp()
+  if (loading || !profileReady) return null
+  if (!profile) return <Navigate to="/onboarding" replace />
+  if (profile.role !== 'judge' && profile.role !== 'main_admin')
     return <Navigate to="/" replace />
-  }
-  if (isParticipantRole(role) || isParticipantRole(profile?.role ?? null)) {
-    return <Navigate to="/" replace />
-  }
-  if (role !== 'judge' && profile?.role !== 'judge') {
-    return <Navigate to="/" replace />
-  }
   return <>{children}</>
 }
 
-function RequireTeam({ children }: { children: React.ReactNode }) {
-  const { authenticated, role, profile } = useApp()
-  if (!authenticated) return <Navigate to="/auth" replace />
-  if (role === 'admin' || profile?.role === 'admin') {
+function RequireUser({ children }: { children: React.ReactNode }) {
+  const { profile, loading, profileReady } = useApp()
+  if (loading || !profileReady) return null
+  if (!profile) return <Navigate to="/onboarding" replace />
+  if (profile.role !== 'user' && profile.role !== 'main_admin')
     return <Navigate to="/" replace />
-  }
-  if (role === 'judge' || profile?.role === 'judge') {
-    return <Navigate to="/" replace />
-  }
-  if (!isParticipantRole(role) && !isParticipantRole(profile?.role ?? null)) {
-    return <Navigate to="/" replace />
-  }
+  if (profile.role === 'user' && !profile.is_approved)
+    return <Navigate to="/pending-approval" replace />
+  if (profile.role === 'user' && !profile.onboarding_complete)
+    return <Navigate to="/onboarding" replace />
   return <>{children}</>
 }
 
 function HomeRedirect() {
-  const {
-    authenticated,
-    role,
-    supabaseMode,
-    useApiBackend,
-    profile,
-    profileLoading,
-    demoPasswordAuth,
-  } = useApp()
+  const { session, profile, loading, profileReady } = useApp()
+  if (loading || !profileReady) return null
+  if (!session) return <Navigate to="/auth" replace />
+  
+  // If no profile yet, but it's a main admin email, AppContext will have synthesized it.
+  // If still no profile, it's a missing normal user profile -> onboarding.
+  if (!profile) return <Navigate to="/onboarding" replace />
 
-  if (!authenticated) return <Navigate to="/auth" replace />
-
-  if (useApiBackend) {
-    if (profileLoading) {
-      return (
-        <div className="p-12 text-center text-sm text-zinc-400">Loading…</div>
-      )
-    }
-    if (!profile) return <Navigate to="/auth" replace />
-    if (profile.role === 'admin') return <Navigate to="/admin" replace />
-    if (isParticipantRole(profile.role) && !profile.team_id) {
-      return <Navigate to="/team/register" replace />
-    }
-    if (profile.approval_status !== 'approved') {
-      return <Navigate to="/pending-approval" replace />
-    }
-    if (isParticipantRole(profile.role)) return <Navigate to="/team" replace />
-    return <Navigate to="/judge/dashboard" replace />
-  }
-
-  if (supabaseMode) {
-    if (demoPasswordAuth) {
-      if (role === 'admin') return <Navigate to="/admin" replace />
-      if (isParticipantRole(role)) return <Navigate to="/team" replace />
-      return <Navigate to="/judge/dashboard" replace />
-    }
-    if (profileLoading) {
-      return (
-        <div className="p-12 text-center text-sm text-zinc-400">Loading…</div>
-      )
-    }
-    if (!profile) return <Navigate to="/auth" replace />
-    if (profile.role === 'admin') return <Navigate to="/admin" replace />
-    if (isParticipantRole(profile.role) && !profile.team_id) {
-      return <Navigate to="/team/register" replace />
-    }
-    if (profile.approval_status !== 'approved') {
-      return <Navigate to="/pending-approval" replace />
-    }
-    if (isParticipantRole(profile.role)) return <Navigate to="/team" replace />
-    return <Navigate to="/judge/dashboard" replace />
-  }
-
-  if (role === 'admin') return <Navigate to="/admin" replace />
-  if (isParticipantRole(role)) return <Navigate to="/team" replace />
-  return <Navigate to="/judge/dashboard" replace />
+  // Admins bypass onboarding complete check
+  if (profile.role === 'admin' || profile.role === 'main_admin')
+    return <Navigate to="/admin" replace />
+    
+  if (profile.role === 'judge') return <Navigate to="/judge" replace />
+  
+  if (!profile.onboarding_complete) return <Navigate to="/onboarding" replace />
+  if (!profile.is_approved) return <Navigate to="/pending-approval" replace />
+  return <Navigate to="/dashboard" replace />
 }
 
 function AppRoutes() {
@@ -185,6 +89,14 @@ function AppRoutes() {
       <Route path="/auth/callback" element={<AuthCallbackPage />} />
       <Route path="/" element={<HomeRedirect />} />
       <Route
+        path="/onboarding"
+        element={
+          <RequireAuthOnly>
+            <OnboardingPage />
+          </RequireAuthOnly>
+        }
+      />
+      <Route
         path="/pending-approval"
         element={
           <RequireAuthOnly>
@@ -193,64 +105,42 @@ function AppRoutes() {
         }
       />
       <Route
-        path="/team/register"
+        path="/dashboard"
         element={
-          <RequireAuthOnly>
-            <TeamRegisterPage />
-          </RequireAuthOnly>
+          <RequireAuth>
+            <RequireUser>
+              <UserDashboardPage />
+            </RequireUser>
+          </RequireAuth>
         }
       />
       <Route
-        path="/judge/feed"
+        path="/dashboard/events/:eventId"
+        element={
+          <RequireAuth>
+            <RequireUser>
+              <UserEventPage />
+            </RequireUser>
+          </RequireAuth>
+        }
+      />
+      <Route
+        path="/judge"
         element={
           <RequireAuth>
             <RequireJudge>
-              <JudgeFeedPage />
+              <JudgeHomePage />
             </RequireJudge>
           </RequireAuth>
         }
       />
       <Route
-        path="/judge/dashboard"
+        path="/judge/events/:eventId"
         element={
           <RequireAuth>
             <RequireJudge>
-              <JudgeDashboardPage />
+              <JudgeEventPage />
             </RequireJudge>
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/judge/score/:projectId"
-        element={
-          <RequireAuth>
-            <RequireJudge>
-              <ScoringPage />
-            </RequireJudge>
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/project/:id"
-        element={
-          <RequireAuth>
-            <ProjectDetailPage />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/leaderboard"
-        element={
-          <RequireAuth>
-            <LeaderboardPage />
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/events/:id"
-        element={
-          <RequireAuth>
-            <EventDetailPage />
           </RequireAuth>
         }
       />
@@ -259,38 +149,18 @@ function AppRoutes() {
         element={
           <RequireAuth>
             <RequireAdmin>
-              <AdminPage />
+              <AdminDashboardPage />
             </RequireAdmin>
           </RequireAuth>
         }
       />
       <Route
-        path="/admin/event-setup"
+        path="/admin/events/:eventId"
         element={
           <RequireAuth>
             <RequireAdmin>
-              <EventSetupPage />
+              <AdminEventPage />
             </RequireAdmin>
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/team"
-        element={
-          <RequireAuth>
-            <RequireTeam>
-              <TeamPage />
-            </RequireTeam>
-          </RequireAuth>
-        }
-      />
-      <Route
-        path="/team/submit"
-        element={
-          <RequireAuth>
-            <RequireTeam>
-              <ProjectSubmitPage />
-            </RequireTeam>
           </RequireAuth>
         }
       />

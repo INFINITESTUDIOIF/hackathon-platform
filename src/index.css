@@ -3,16 +3,16 @@
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji",
     "Segoe UI Emoji";
-  --radius-card: 14px;
-  --radius-lg: 16px;
+  --radius-card: 24px;
+  --radius-lg: 32px;
   --shadow-soft: 0 1px 2px rgb(0 0 0 / 0.2), 0 8px 24px rgb(0 0 0 / 0.35);
   --shadow-elevated: 0 4px 6px rgb(0 0 0 / 0.25), 0 24px 48px rgb(0 0 0 / 0.45);
-  --bg-outer: #07070c;
+  --bg-outer: #050508;
   --color-surface: #09090f;
   --color-surface-elevated: #12121a;
-  --color-border: rgb(255 255 255 / 0.08);
-  --color-muted: #a1a1aa;
-  --color-accent-from: #7c3aed;
+  --color-border: rgb(255 255 255 / 0.06);
+  --color-muted: #71717a;
+  --color-accent-from: #8b5cf6;
   --color-accent-to: #6366f1;
 }
 
@@ -21,8 +21,50 @@
     @apply antialiased scroll-smooth;
   }
   body {
-    @apply min-h-dvh bg-[var(--bg-outer)] text-zinc-100;
+    @apply min-h-dvh bg-[var(--bg-outer)] text-zinc-100 selection:bg-violet-500/30;
   }
+}
+
+/* Premium Side-bar style */
+.sidebar-glass {
+  background: linear-gradient(180deg, rgba(9, 9, 15, 0.8) 0%, rgba(5, 5, 8, 0.9) 100%);
+  backdrop-filter: blur(20px);
+  border-right: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.nav-link-active {
+  @apply bg-white/5 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.05)];
+  background: linear-gradient(90deg, rgba(139, 92, 246, 0.1) 0%, transparent 100%);
+}
+
+.nav-link-active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 25%;
+  bottom: 25%;
+  width: 3px;
+  background: #8b5cf6;
+  border-radius: 0 4px 4px 0;
+  box-shadow: 0 0 10px #8b5cf6;
+}
+
+/* Organic Waveform for Event Timeline */
+.milestone-wave {
+  stroke-dasharray: 1000;
+  stroke-dashoffset: 1000;
+  animation: wave-draw 2s ease-out forwards;
+}
+
+@keyframes wave-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Smooth transitions for all interactive elements */
+* {
+  @apply transition-all duration-200 ease-out;
 }
 
 /* Outer “page behind” — slightly lighter / blurred feel */
@@ -191,6 +233,21 @@
     transparent
   );
   animation: shimmer 1.4s ease-in-out infinite;
+}
+
+@layer utilities {
+  .animate-spin-reverse {
+    animation: spin-reverse 1s linear infinite;
+  }
+}
+
+@keyframes spin-reverse {
+  from {
+    transform: rotate(360deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
 }
 
 /* Premium range styling (thumb size + track glow) */

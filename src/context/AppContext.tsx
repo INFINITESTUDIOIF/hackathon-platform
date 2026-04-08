@@ -1,897 +1,253 @@
 /* eslint-disable react-refresh/only-export-components */
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type ReactNode,
-} from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import type { Role } from '../data/mock'
-import { PROJECTS } from '../data/mock'
-import {
-  ADMIN_EMAIL,
-  ADMIN_PASSWORD,
-  JUDGE_LOGIN_PASSWORD,
-  TEAM_EMAIL,
-  TEAM_LOGIN_PASSWORD,
-} from '../config/auth'
-import type {
-  AdminUser,
-  EventSetup,
-  InvitedJudge,
-  RubricCriterion,
-} from '../types/event'
-import { defaultEventSetup } from '../types/event'
 import { supabase, isSupabaseConfigured } from '../lib/supabase'
-import { isAdminEmail } from '../lib/adminEmails'
-import { apiMode as useApiBackend } from '../config/api'
-import type { LeaderboardVisibility, ProfileRow } from '../services/supabaseApi'
-import {
-  fetchAppSettings,
-  fetchFeedProjects,
-  fetchMyScoresForJudge,
-  fetchProfile,
-  insertProfile,
-  promoteEmailToJudgeByAdmin,
-  updateAppSettings,
-  updateProfile,
-  upsertJudgeScore,
-} from '../services/supabaseApi'
-import {
-  fetchAppSettingsMongo,
-  fetchBootstrapMongo,
-  fetchFeedProjectsMongo,
-  fetchInvitedJudgesMongo,
-  getApiToken,
-  getSelectedEventId,
-  mongoLogin,
-  promoteEmailToJudgeMongo,
-  setApiToken,
-  setSelectedEventId,
-  updateAppSettingsMongo,
-  updateInvitedJudgeStatusMongo,
-  upsertJudgeScoreMongo,
-} from '../services/mongoApi'
-
-function uiRole(profileRole: ProfileRow['role'] | null | undefined): Role | null {
-  if (!profileRole) return null
-  if (profileRole === 'team') return 'participant'
-  return profileRole as Role
-}
-
-function mapBootRecordToEventSetup(e: Record<string, unknown> | null): EventSetup | null {
-  if (!e) return null
-  return {
-    id: typeof e.id === 'string' ? e.id : undefined,
-    name: String(e.name ?? ''),
-    tagline: String(e.tagline ?? ''),
-    description: String(e.description ?? ''),
-    bannerDataUrl: (e.bannerDataUrl as string | null) ?? null,
-    submissionStart: String(e.submissionStart ?? ''),
-    submissionEnd: String(e.submissionEnd ?? ''),
-    judgingStart: String(e.judgingStart ?? ''),
-    winnerAnnouncement: String(e.winnerAnnouncement ?? ''),
-    autoLock: Boolean(e.autoLock),
-    scoringMode: (e.scoringMode as EventSetup['scoringMode']) ?? 'rubric',
-    rubric: Array.isArray(e.rubric) ? (e.rubric as EventSetup['rubric']) : [],
-    tracks: Array.isArray(e.tracks) ? (e.tracks as string[]) : [],
-    lifecycleStatus: (e.lifecycleStatus as EventSetup['lifecycleStatus']) ?? 'active',
-  }
-}
+import type { Profile, ProfileRole } from '../services/aeviniteApi'
+import { fetchMyProfile } from '../services/aeviniteApi'
 
 type AppState = {
+  session: Session | null
+  profile: Profile | null
+  loading: boolean
+  profileReady: boolean
   supabaseMode: boolean
-  /** Data + auth via Mongo API (`VITE_API_URL`). */
-  useApiBackend: boolean
-  /** Feed / leaderboard project list comes from server, not mock. */
-  feedUsesDatabase: boolean
-  authSession: Session | null
-  profile: ProfileRow | null
-  profileLoading: boolean
-  role: Role | null
-  setRole: (r: Role | null) => void
-  authenticated: boolean
-  setAuthenticated: (v: boolean) => void
-  loginWithPassword: (email: string, password: string) => Promise<boolean>
-  logout: () => Promise<void>
-  signInWithGoogle: () => Promise<void>
-  judgedIds: Set<string>
-  markJudged: (projectId: string) => void
-  scores: Record<string, Record<string, number>>
-  setCriterionScore: (
-    projectId: string,
-    criterionKey: string,
-    value: number,
-  ) => void
-  stars: Record<string, number>
-  setStars: (projectId: string, n: number) => void
-  likes: Set<string>
-  toggleLike: (projectId: string) => void
-  comments: Record<string, string>
-  setComment: (projectId: string, text: string) => void
-  leaderboardVisibility: LeaderboardVisibility
-  setLeaderboardVisibility: (v: LeaderboardVisibility) => Promise<void>
-  /** @deprecated use leaderboardVisibility */
-  leaderboardPublic: boolean
-  setLeaderboardPublic: (v: boolean) => void
-  feedError: boolean
-  setFeedError: (v: boolean) => void
-  feedProjects: typeof PROJECTS
-  refreshFeed: () => Promise<void>
-  eventSetup: EventSetup
-  setEventSetup: (u: EventSetup | ((prev: EventSetup) => EventSetup)) => void
-  updateRubric: (rubric: RubricCriterion[]) => void
-  updateTracks: (tracks: string[]) => void
-  admins: AdminUser[]
-  addAdminByEmail: (email: string) => boolean
-  invitedJudges: InvitedJudge[]
-  inviteJudgeByEmail: (email: string) => Promise<boolean>
-  setJudgeStatus: (id: string, status: InvitedJudge['status']) => Promise<void>
-  winnerAnnouncedAt: string | null
-  announceWinners: () => Promise<void>
-  persistJudgeScore: (
-    projectId: string,
-    criterionScores: Record<string, number>,
-    comment: string,
-    total: number,
-  ) => Promise<void>
-  refreshAppSettings: () => Promise<void>
+  signInWithGoogle: (opts?: { next?: string }) => Promise<void>
+  signInWithPassword: (email: string, password: string) => Promise<void>
+  signUpWithEmail: (email: string, password: string, opts?: { next?: string }) => Promise<void>
+  signOut: () => Promise<void>
   refreshProfile: () => Promise<void>
-  /** Demo judge/team/admin login via config passwords while Supabase is configured (no JWT). */
-  demoPasswordAuth: boolean
+  mainAdminEmails: string[]
+  isRole: (role: ProfileRole) => boolean
 }
 
 const Ctx = createContext<AppState | null>(null)
 
+function parseEmailList(v: string | undefined): string[] {
+  if (!v) return []
+  return v
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean)
+}
+
 export function AppProvider({ children }: { children: ReactNode }) {
   const supabaseMode = isSupabaseConfigured
-
-  const [authSession, setAuthSession] = useState<Session | null>(null)
-  const [profile, setProfile] = useState<ProfileRow | null>(null)
-  const [profileLoading, setProfileLoading] = useState(
-    () => supabaseMode || useApiBackend,
+  const mainAdminEmails = useMemo(
+    () => parseEmailList(import.meta.env.VITE_MAIN_ADMIN_EMAILS as string | undefined),
+    [],
   )
 
-  const [role, setRole] = useState<Role | null>(null)
-  const [localAuthenticated, setLocalAuthenticated] = useState(false)
-  const [demoPasswordAuth, setDemoPasswordAuth] = useState(false)
-  /** Synced immediately on demo login so async Supabase init never wipes role. */
-  const demoPasswordAuthRef = useRef(false)
+  const [session, setSession] = useState<Session | null>(null)
+  const [profile, setProfile] = useState<Profile | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [profileReady, setProfileReady] = useState(false)
 
-  const [judgedIds, setJudgedIds] = useState<Set<string>>(() =>
-    supabaseMode || useApiBackend ? new Set() : new Set(['p-1', 'p-3']),
-  )
-  const [scores, setScores] = useState<Record<string, Record<string, number>>>(
-    {},
-  )
-  const [stars, setStarsState] = useState<Record<string, number>>({})
-  const [likes, setLikes] = useState<Set<string>>(() => new Set())
-  const [comments, setComments] = useState<Record<string, string>>({})
-  const [leaderboardVisibility, setLeaderboardVisibilityState] =
-    useState<LeaderboardVisibility>('admin_only')
-  const [feedError, setFeedError] = useState(false)
-  const [eventSetup, setEventSetup] = useState<EventSetup>(defaultEventSetup())
-  const [winnerAnnouncedAt, setWinnerAnnouncedAt] = useState<string | null>(
-    null,
-  )
-  const [feedProjects, setFeedProjects] = useState<typeof PROJECTS>(PROJECTS)
-
-  const [admins, setAdmins] = useState<AdminUser[]>([
-    { id: 'adm-1', email: ADMIN_EMAIL },
-  ])
-
-  const [invitedJudges, setInvitedJudges] = useState<InvitedJudge[]>([
-    {
-      id: 'inv-1',
-      email: 'judge@demo.com',
-      status: 'accepted',
+  const isMainAdminEmail = useCallback(
+    (email: string | undefined) => {
+      if (!email) return false
+      const e = email.toLowerCase()
+      return mainAdminEmails.includes(e) || e === 'aevinite@gmail.com'
     },
-  ])
-
-  const feedUsesDatabase =
-    useApiBackend || (supabaseMode && !demoPasswordAuth)
-
-  const authenticated = useApiBackend
-    ? Boolean(getApiToken())
-    : supabaseMode
-      ? !!authSession || demoPasswordAuth
-      : localAuthenticated
-
-  const refreshFeed = useCallback(async () => {
-    if (demoPasswordAuth && !useApiBackend) {
-      setFeedProjects(PROJECTS)
-      return
-    }
-    if (useApiBackend) {
-      try {
-        const list = await fetchFeedProjectsMongo()
-        setFeedProjects(list.length ? list : [])
-        setFeedError(false)
-      } catch {
-        setFeedError(true)
-      }
-      return
-    }
-    if (!supabaseMode || !supabase) {
-      setFeedProjects(PROJECTS)
-      return
-    }
-    try {
-      const list = await fetchFeedProjects()
-      setFeedProjects(list.length ? list : [])
-      setFeedError(false)
-    } catch {
-      setFeedError(true)
-    }
-  }, [supabaseMode, demoPasswordAuth, useApiBackend])
-
-  useEffect(() => {
-    if (!supabaseMode && !useApiBackend) {
-      setFeedProjects(PROJECTS)
-      setProfileLoading(false)
-    }
-  }, [supabaseMode, useApiBackend])
-
-  const refreshAppSettings = useCallback(async () => {
-    if (useApiBackend) {
-      const s = await fetchAppSettingsMongo()
-      if (s?.leaderboard_visibility)
-        setLeaderboardVisibilityState(s.leaderboard_visibility)
-      setWinnerAnnouncedAt(s?.winner_announced_at ?? null)
-      return
-    }
-    if (!supabaseMode || !supabase) return
-    const s = await fetchAppSettings()
-    if (s?.leaderboard_visibility)
-      setLeaderboardVisibilityState(s.leaderboard_visibility)
-    setWinnerAnnouncedAt(s?.winner_announced_at ?? null)
-  }, [supabaseMode, useApiBackend])
-
-  useEffect(() => {
-    if (!useApiBackend) return
-    let cancelled = false
-    setProfileLoading(true)
-    const run = async () => {
-      const token = getApiToken()
-      if (!token) {
-        setProfile(null)
-        setRole(null)
-        setJudgedIds(new Set())
-        setScores({})
-        setComments({})
-        if (!cancelled) setProfileLoading(false)
-        return
-      }
-      const boot = await fetchBootstrapMongo()
-      if (cancelled) return
-      if (!boot?.user) {
-        setApiToken(null)
-        setProfile(null)
-        setRole(null)
-        setJudgedIds(new Set())
-        setScores({})
-        setComments({})
-        setProfileLoading(false)
-        return
-      }
-      if (!getSelectedEventId() && boot.currentEventId) {
-        setSelectedEventId(boot.currentEventId)
-      }
-      const u = boot.user
-      setProfile(u)
-      setRole(uiRole(u.role))
-      if (boot.settings?.leaderboard_visibility) {
-        setLeaderboardVisibilityState(boot.settings.leaderboard_visibility)
-      }
-      setWinnerAnnouncedAt(boot.settings?.winner_announced_at ?? null)
-      setFeedProjects(boot.projects?.length ? boot.projects : [])
-      setFeedError(false)
-      const evSetup = mapBootRecordToEventSetup(boot.event)
-      if (evSetup) setEventSetup(evSetup)
-      if (u.role === 'judge' && u.approval_status === 'approved') {
-        const nextJudged = new Set<string>()
-        const nextScores: Record<string, Record<string, number>> = {}
-        const nextComments: Record<string, string> = {}
-        for (const r of boot.myJudgeScores || []) {
-          nextJudged.add(r.project_id)
-          nextScores[r.project_id] = r.criterion_scores || {}
-          if (r.comment) nextComments[r.project_id] = r.comment
-        }
-        setJudgedIds(nextJudged)
-        setScores((prev) => ({ ...nextScores, ...prev }))
-        setComments((prev) => ({ ...nextComments, ...prev }))
-      } else {
-        setJudgedIds(new Set())
-        setScores({})
-        setComments({})
-      }
-      if (u.role === 'admin') {
-        try {
-          const judges = await fetchInvitedJudgesMongo()
-          if (!cancelled && judges.length) setInvitedJudges(judges)
-        } catch {
-          /* ignore */
-        }
-      }
-      if (!cancelled) setProfileLoading(false)
-    }
-    void run()
-    return () => {
-      cancelled = true
-    }
-  }, [useApiBackend])
-
-  const ensureProfile = useCallback(
-    async (user: NonNullable<Session['user']>) => {
-      if (!supabase) return
-      const email = user.email ?? ''
-      const fullName =
-        (user.user_metadata?.full_name as string | undefined) ||
-        (user.user_metadata?.name as string | undefined) ||
-        null
-      let row = await fetchProfile(user.id)
-      if (!row) {
-        const admin = isAdminEmail(email)
-        await insertProfile({
-          id: user.id,
-          email,
-          full_name: fullName,
-          role: admin ? 'admin' : 'team',
-          team_id: null,
-          approval_status: admin ? 'approved' : 'pending',
-        })
-        row = await fetchProfile(user.id)
-      } else if (isAdminEmail(email) && row.role !== 'admin') {
-        await updateProfile(user.id, {
-          role: 'admin',
-          approval_status: 'approved',
-        })
-        row = await fetchProfile(user.id)
-      }
-      setProfile(row)
-      if (row) {
-        setRole(uiRole(row.role))
-        if (row.role === 'judge' && row.approval_status === 'approved') {
-          const scoreRows = await fetchMyScoresForJudge(user.id)
-          const nextJudged = new Set<string>()
-          const nextScores: Record<string, Record<string, number>> = {}
-          const nextComments: Record<string, string> = {}
-          for (const r of scoreRows) {
-            nextJudged.add(r.project_id)
-            nextScores[r.project_id] = r.criterion_scores || {}
-            if (r.comment) nextComments[r.project_id] = r.comment
-          }
-          setJudgedIds(nextJudged)
-          setScores((prev) => ({ ...nextScores, ...prev }))
-          setComments((prev) => ({ ...nextComments, ...prev }))
-        }
-      }
-      await refreshFeed()
-      await refreshAppSettings()
-    },
-    [refreshFeed, refreshAppSettings],
+    [mainAdminEmails],
   )
 
   const refreshProfile = useCallback(async () => {
-    if (useApiBackend) {
-      setProfileLoading(true)
-      const boot = await fetchBootstrapMongo()
-      const u = boot?.user ?? null
-      setProfile(u)
-      setRole(uiRole(u?.role ?? null))
-      if (boot?.settings?.leaderboard_visibility) {
-        setLeaderboardVisibilityState(boot.settings.leaderboard_visibility)
-      }
-      setWinnerAnnouncedAt(boot?.settings?.winner_announced_at ?? null)
-      if (boot?.projects) {
-        setFeedProjects(boot.projects.length ? boot.projects : [])
-        setFeedError(false)
-      }
-      const evSetup = mapBootRecordToEventSetup(boot?.event ?? null)
-      if (evSetup) setEventSetup(evSetup)
-      if (u?.role === 'judge' && u.approval_status === 'approved') {
-        const scoreRows = boot?.myJudgeScores ?? []
-        const nextJudged = new Set<string>()
-        const nextScores: Record<string, Record<string, number>> = {}
-        const nextComments: Record<string, string> = {}
-        for (const r of scoreRows) {
-          nextJudged.add(r.project_id)
-          nextScores[r.project_id] = r.criterion_scores || {}
-          if (r.comment) nextComments[r.project_id] = r.comment
-        }
-        setJudgedIds(nextJudged)
-        setScores((prev) => ({ ...nextScores, ...prev }))
-        setComments((prev) => ({ ...nextComments, ...prev }))
-      } else {
-        setJudgedIds(new Set())
-        setScores({})
-        setComments({})
-      }
-      setProfileLoading(false)
+    if (!supabase || !session?.user) {
+      setProfile(null)
+      setProfileReady(true)
       return
     }
-    if (!supabase || !authSession?.user) return
-    setProfileLoading(true)
-    await ensureProfile(authSession.user)
-    setProfileLoading(false)
-  }, [
-    useApiBackend,
-    authSession,
-    ensureProfile,
-    refreshFeed,
-    refreshAppSettings,
-  ])
+    try {
+      const row = await fetchMyProfile(session.user.id)
+      if (row) {
+        setProfile(row)
+      } else if (isMainAdminEmail(session.user.email)) {
+        // Synthesize a profile for main admin if it's missing in DB
+        const adminProfile: Profile = {
+          id: session.user.id,
+          email: session.user.email ?? null,
+          username: 'admin',
+          role: 'main_admin',
+          is_approved: true,
+          onboarding_complete: true,
+          avatar_url: null,
+          created_at: new Date().toISOString(),
+        }
+        setProfile(adminProfile)
+        
+        // Try to create the profile in DB so subsequent reads work.
+        // We await this for main admins to ensure RLS is satisfied before they hit the dashboard.
+        try {
+          await supabase.from('profiles').upsert(adminProfile, { onConflict: 'id' })
+        } catch (err) {
+          console.warn('Silent admin upsert failed (expected if RLS is strict):', err)
+        }
+      } else {
+        setProfile(null)
+      }
+    } catch (e) {
+      console.error('Failed to refresh profile:', e)
+      if (isMainAdminEmail(session.user.email)) {
+        setProfile({
+          id: session.user.id,
+          email: session.user.email ?? null,
+          username: 'admin',
+          role: 'main_admin',
+          is_approved: true,
+          onboarding_complete: true,
+          avatar_url: null,
+          created_at: new Date().toISOString(),
+        })
+      } else {
+        setProfile(null)
+      }
+    } finally {
+      setProfileReady(true)
+    }
+  }, [session?.user, isMainAdminEmail])
 
   useEffect(() => {
-    if (useApiBackend || !supabaseMode || !supabase) return
-    const client = supabase
-
+    if (!supabaseMode || !supabase) {
+      setLoading(false)
+      return
+    }
+    const sb = supabase
     let cancelled = false
-    setProfileLoading(true)
 
     const init = async () => {
-      const {
-        data: { session },
-      } = await client.auth.getSession()
+      setLoading(true)
+      const { data } = await sb.auth.getSession()
       if (cancelled) return
-      setAuthSession(session)
-      if (session?.user) {
-        demoPasswordAuthRef.current = false
-        setDemoPasswordAuth(false)
-        await ensureProfile(session.user)
-      } else if (!demoPasswordAuthRef.current) {
-        setProfile(null)
-        setRole(null)
-      } else {
-        setProfile(null)
-        setProfileLoading(false)
-        return
-      }
-      if (!cancelled) setProfileLoading(false)
+      setSession(data.session)
+      setLoading(false)
     }
-
     void init()
 
-    const {
-      data: { subscription },
-    } = client.auth.onAuthStateChange((_evt, session) => {
-      setAuthSession(session)
-      if (session?.user) {
-        demoPasswordAuthRef.current = false
-        setDemoPasswordAuth(false)
-        setProfileLoading(true)
-        void ensureProfile(session.user).finally(() => setProfileLoading(false))
-      } else if (!demoPasswordAuthRef.current) {
-        setProfile(null)
-        setRole(null)
-        setJudgedIds(new Set())
-        setScores({})
-        setComments({})
-      } else {
-        setProfile(null)
-      }
+    const { data: sub } = sb.auth.onAuthStateChange((_evt, s) => {
+      setSession(s)
     })
 
     return () => {
       cancelled = true
-      subscription.unsubscribe()
+      sub.subscription.unsubscribe()
     }
-  }, [supabaseMode, useApiBackend, ensureProfile])
+  }, [supabaseMode])
 
-  const loginWithPassword = useCallback(
-    async (email: string, password: string) => {
-      if (useApiBackend) {
+  useEffect(() => {
+    if (!supabaseMode) return
+    if (!session?.user) {
+      setProfile(null)
+      setProfileReady(false)
+      return
+    }
+    setProfileReady(false)
+    let cancelled = false
+    void (async () => {
+      setLoading(true)
+      try {
+        if (cancelled) return
         try {
-          await mongoLogin(email, password)
-          const boot = await fetchBootstrapMongo()
-          if (!boot?.user) return false
-          if (!getSelectedEventId() && boot.currentEventId) {
-            setSelectedEventId(boot.currentEventId)
-          }
-          const u = boot.user
-          setProfile(u)
-          setRole(uiRole(u.role))
-          demoPasswordAuthRef.current = false
-          setDemoPasswordAuth(false)
-          if (boot.settings?.leaderboard_visibility) {
-            setLeaderboardVisibilityState(boot.settings.leaderboard_visibility)
-          }
-          setWinnerAnnouncedAt(boot.settings?.winner_announced_at ?? null)
-          setFeedProjects(boot.projects?.length ? boot.projects : [])
-          setFeedError(false)
-          const evSetup = mapBootRecordToEventSetup(boot.event)
-          if (evSetup) setEventSetup(evSetup)
-          if (u.role === 'judge' && u.approval_status === 'approved') {
-            const nextJudged = new Set<string>()
-            const nextScores: Record<string, Record<string, number>> = {}
-            const nextComments: Record<string, string> = {}
-            for (const r of boot.myJudgeScores || []) {
-              nextJudged.add(r.project_id)
-              nextScores[r.project_id] = r.criterion_scores || {}
-              if (r.comment) nextComments[r.project_id] = r.comment
-            }
-            setJudgedIds(nextJudged)
-            setScores((prev) => ({ ...nextScores, ...prev }))
-            setComments((prev) => ({ ...nextComments, ...prev }))
-          } else {
-            setJudgedIds(new Set())
-            setScores({})
-            setComments({})
-          }
-          if (u.role === 'admin') {
-            try {
-              const judges = await fetchInvitedJudgesMongo()
-              if (judges.length) setInvitedJudges(judges)
-            } catch {
-              /* ignore */
-            }
-          }
-          return true
+          await refreshProfile()
         } catch {
-          return false
+          // If profile read fails due to schema mismatch, mark ready so routing can proceed.
+          if (!cancelled) {
+            // refreshProfile already sets profileReady in finally when possible; keep safe.
+          }
         }
+      } finally {
+        if (!cancelled) setLoading(false)
       }
-      const e = email.trim().toLowerCase()
-      if (e === ADMIN_EMAIL.toLowerCase() && password === ADMIN_PASSWORD) {
-        setRole('admin')
-        if (supabaseMode) {
-          demoPasswordAuthRef.current = true
-          setDemoPasswordAuth(true)
-          setFeedProjects(PROJECTS)
-        } else {
-          setLocalAuthenticated(true)
-        }
-        return true
-      }
-      const inv = invitedJudges.find(
-        (j) => j.email.toLowerCase() === e && j.status === 'accepted',
-      )
-      if (inv && password === JUDGE_LOGIN_PASSWORD) {
-        setRole('judge')
-        if (supabaseMode) {
-          demoPasswordAuthRef.current = true
-          setDemoPasswordAuth(true)
-          setFeedProjects(PROJECTS)
-          setJudgedIds(new Set(['p-1', 'p-3']))
-        } else {
-          setLocalAuthenticated(true)
-        }
-        return true
-      }
-
-      if (e === TEAM_EMAIL.toLowerCase() && password === TEAM_LOGIN_PASSWORD) {
-        setRole('participant')
-        if (supabaseMode) {
-          demoPasswordAuthRef.current = true
-          setDemoPasswordAuth(true)
-          setFeedProjects(PROJECTS)
-        } else {
-          setLocalAuthenticated(true)
-        }
-        return true
-      }
-      return false
-    },
-    [supabaseMode, invitedJudges, useApiBackend],
-  )
-
-  const logout = useCallback(async () => {
-    demoPasswordAuthRef.current = false
-    if (useApiBackend) {
-      setApiToken(null)
-      setSelectedEventId(null)
+    })()
+    return () => {
+      cancelled = true
     }
-    if (supabase) await supabase.auth.signOut()
-    setLocalAuthenticated(false)
-    setDemoPasswordAuth(false)
-    setRole(null)
-    setProfile(null)
-    setAuthSession(null)
-    setFeedProjects(PROJECTS)
-  }, [useApiBackend])
+  }, [session?.user, supabaseMode, refreshProfile])
 
-  const signInWithGoogle = useCallback(async () => {
-    if (!supabase) {
-      throw new Error(
-        'Google sign-in is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.',
-      )
-    }
+  const signInWithGoogle = useCallback(async (opts?: { next?: string }) => {
+    if (!supabase) throw new Error('Supabase is not configured.')
+    const next = opts?.next ?? '/'
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
       },
     })
-    if (error) {
-      throw new Error(error.message || 'Could not start Google sign-in.')
-    }
+    if (error) throw error
   }, [])
 
-  const markJudged = useCallback((projectId: string) => {
-    setJudgedIds((prev) => new Set(prev).add(projectId))
+  const signInWithPassword = useCallback(async (email: string, password: string) => {
+    if (!supabase) throw new Error('Supabase is not configured.')
+    const { error } = await supabase.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password,
+    })
+    if (error) throw error
   }, [])
 
-  const setCriterionScore = useCallback(
-    (projectId: string, criterionKey: string, value: number) => {
-      setScores((prev) => ({
-        ...prev,
-        [projectId]: { ...prev[projectId], [criterionKey]: value },
-      }))
+  const signUpWithEmail = useCallback(
+    async (email: string, password: string, opts?: { next?: string }) => {
+      if (!supabase) throw new Error('Supabase is not configured.')
+      const next = opts?.next ?? '/onboarding'
+      const e = email.trim().toLowerCase()
+
+      // Store password to autofill after verification link returns.
+      localStorage.setItem('aevinite:signup_password', password)
+      localStorage.setItem('aevinite:signup_email', e)
+
+      const { error } = await supabase.auth.signUp({
+        email: e,
+        password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`,
+        },
+      })
+      if (error) throw error
     },
     [],
   )
 
-  const setStars = useCallback((projectId: string, n: number) => {
-    setStarsState((prev) => ({ ...prev, [projectId]: n }))
+  const signOut = useCallback(async () => {
+    if (supabase) await supabase.auth.signOut()
+    setSession(null)
+    setProfile(null)
+    setProfileReady(false)
   }, [])
 
-  const toggleLike = useCallback((projectId: string) => {
-    setLikes((prev) => {
-      const next = new Set(prev)
-      if (next.has(projectId)) next.delete(projectId)
-      else next.add(projectId)
-      return next
-    })
-  }, [])
-
-  const setComment = useCallback((projectId: string, text: string) => {
-    setComments((prev) => ({ ...prev, [projectId]: text }))
-  }, [])
-
-  const setLeaderboardVisibility = useCallback(
-    async (v: LeaderboardVisibility) => {
-      setLeaderboardVisibilityState(v)
-      if (useApiBackend) {
-        try {
-          await updateAppSettingsMongo({ leaderboard_visibility: v })
-        } catch {
-          /* offline */
-        }
-        return
-      }
-      if (supabaseMode && supabase && authSession) {
-        try {
-          await updateAppSettings({ leaderboard_visibility: v })
-        } catch {
-          /* no JWT (demo password admin) — local state only */
-        }
-      }
+  const isRole = useCallback(
+    (role: ProfileRole) => {
+      return profile?.role === role
     },
-    [supabaseMode, authSession, useApiBackend],
+    [profile?.role],
   )
 
-  const setLeaderboardPublic = useCallback(
-    async (v: boolean) => {
-      await setLeaderboardVisibility(v ? 'public' : 'judges_only')
-    },
-    [setLeaderboardVisibility],
-  )
-
-  const updateRubric = useCallback((rubric: RubricCriterion[]) => {
-    setEventSetup((prev) => ({ ...prev, rubric }))
-  }, [])
-
-  const updateTracks = useCallback((tracks: string[]) => {
-    setEventSetup((prev) => ({ ...prev, tracks }))
-  }, [])
-
-  const addAdminByEmail = useCallback((email: string) => {
-    const e = email.trim().toLowerCase()
-    if (!e || !e.includes('@')) return false
-    setAdmins((prev) => {
-      if (prev.some((a) => a.email.toLowerCase() === e)) return prev
-      return [...prev, { id: `adm-${Date.now()}`, email: e }]
-    })
-    return true
-  }, [])
-
-  const inviteJudgeByEmail = useCallback(
-    async (email: string) => {
-      const e = email.trim().toLowerCase()
-      if (!e || !e.includes('@')) return false
-      if (useApiBackend) {
-        try {
-          await promoteEmailToJudgeMongo(e)
-          const list = await fetchInvitedJudgesMongo()
-          setInvitedJudges(list)
-          return true
-        } catch {
-          return false
-        }
-      }
-      if (supabaseMode) {
-        try {
-          await promoteEmailToJudgeByAdmin(e)
-          return true
-        } catch {
-          return false
-        }
-      }
-      setInvitedJudges((prev) => {
-        if (prev.some((j) => j.email.toLowerCase() === e)) return prev
-        return [
-          ...prev,
-          { id: `inv-${Date.now()}`, email: e, status: 'invited' as const },
-        ]
-      })
-      return true
-    },
-    [useApiBackend, supabaseMode],
-  )
-
-  const setJudgeStatus = useCallback(
-    async (id: string, status: InvitedJudge['status']) => {
-      if (useApiBackend) {
-        try {
-          const list = await updateInvitedJudgeStatusMongo(id, status)
-          setInvitedJudges(list)
-        } catch {
-          /* ignore */
-        }
-        return
-      }
-      setInvitedJudges((prev) =>
-        prev.map((j) => (j.id === id ? { ...j, status } : j)),
-      )
-    },
-    [useApiBackend],
-  )
-
-  const announceWinners = useCallback(async () => {
-    const at = new Date().toISOString()
-    setWinnerAnnouncedAt(at)
-    setLeaderboardVisibilityState('public')
-    if (useApiBackend) {
-      try {
-        await updateAppSettingsMongo({
-          winner_announced_at: at,
-          leaderboard_visibility: 'public',
-        })
-      } catch {
-        /* local UI still updates */
-      }
-      window.dispatchEvent(new Event('hackathon:winners-announced'))
-      return
-    }
-    if (supabaseMode && supabase && authSession) {
-      try {
-        await updateAppSettings({
-          winner_announced_at: at,
-          leaderboard_visibility: 'public',
-        })
-      } catch {
-        /* demo-password admin has no JWT; UI still updates locally */
-      }
-    }
-    window.dispatchEvent(new Event('hackathon:winners-announced'))
-  }, [supabaseMode, authSession, useApiBackend])
-
-  const persistJudgeScore = useCallback(
-    async (
-      projectId: string,
-      criterionScores: Record<string, number>,
-      comment: string,
-      total: number,
-    ) => {
-      if (useApiBackend) {
-        const judgeId = profile?.id
-        if (!judgeId) return
-        await upsertJudgeScoreMongo({
-          projectId,
-          judgeId,
-          criterionScores,
-          comment,
-          total,
-        })
-        return
-      }
-      if (!supabase || !authSession?.user) return
-      await upsertJudgeScore({
-        projectId,
-        judgeId: authSession.user.id,
-        criterionScores,
-        comment,
-        total,
-      })
-    },
-    [authSession, useApiBackend, profile?.id],
-  )
-
-  const value = useMemo(
+  const value = useMemo<AppState>(
     () => ({
-      supabaseMode,
-      useApiBackend,
-      feedUsesDatabase,
-      authSession,
+      session,
       profile,
-      profileLoading,
-      role,
-      setRole,
-      authenticated,
-      setAuthenticated: setLocalAuthenticated,
-      loginWithPassword,
-      logout,
+      loading,
+      profileReady,
+      supabaseMode,
       signInWithGoogle,
-      judgedIds,
-      markJudged,
-      scores,
-      setCriterionScore,
-      stars,
-      setStars,
-      likes,
-      toggleLike,
-      comments,
-      setComment,
-      leaderboardVisibility,
-      setLeaderboardVisibility,
-      leaderboardPublic: leaderboardVisibility === 'public',
-      setLeaderboardPublic,
-      feedError,
-      setFeedError,
-      feedProjects,
-      refreshFeed,
-      eventSetup,
-      setEventSetup,
-      updateRubric,
-      updateTracks,
-      admins,
-      addAdminByEmail,
-      invitedJudges,
-      inviteJudgeByEmail,
-      setJudgeStatus,
-      winnerAnnouncedAt,
-      announceWinners,
-      persistJudgeScore,
-      refreshAppSettings,
+      signInWithPassword,
+      signUpWithEmail,
+      signOut,
       refreshProfile,
-      demoPasswordAuth,
+      mainAdminEmails,
+      isRole,
     }),
     [
-      supabaseMode,
-      useApiBackend,
-      feedUsesDatabase,
-      authSession,
+      session,
       profile,
-      profileLoading,
-      role,
-      authenticated,
-      loginWithPassword,
-      logout,
+      loading,
+      profileReady,
+      supabaseMode,
       signInWithGoogle,
-      judgedIds,
-      markJudged,
-      scores,
-      setCriterionScore,
-      stars,
-      setStars,
-      likes,
-      toggleLike,
-      comments,
-      setComment,
-      leaderboardVisibility,
-      setLeaderboardVisibility,
-      setLeaderboardPublic,
-      feedError,
-      feedProjects,
-      refreshFeed,
-      eventSetup,
-      updateRubric,
-      updateTracks,
-      admins,
-      addAdminByEmail,
-      invitedJudges,
-      inviteJudgeByEmail,
-      setJudgeStatus,
-      winnerAnnouncedAt,
-      announceWinners,
-      persistJudgeScore,
-      refreshAppSettings,
+      signInWithPassword,
+      signUpWithEmail,
+      signOut,
       refreshProfile,
-      demoPasswordAuth,
+      mainAdminEmails,
+      isRole,
     ],
   )
 

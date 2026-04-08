@@ -1,73 +1,39 @@
-# React + TypeScript + Vite
+# AEVINITE — Hackathon Management Platform
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Role-based web app with three isolated panels:
+- **User (Participant)**: `/dashboard`
+- **Judge**: `/judge`
+- **Admin / Main Admin**: `/admin`
 
-Currently, two official plugins are available:
+Backend: **Supabase (Postgres + Auth + RLS)**.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Setup
 
-## React Compiler
+1. Create a Supabase project.
+2. Run the SQL in `supabase/schema.sql` in Supabase SQL editor.
+3. Enable Google OAuth in Supabase Auth (optional).
+4. Create `.env` from `.env.example` and fill:
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_ANON_KEY`
+   - `VITE_MAIN_ADMIN_EMAILS` (comma-separated) to bootstrap the first `main_admin` on first login.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Run
 
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Key rules implemented
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+- **Google OAuth + Email/Password** sign-in.
+- **Onboarding required**: username + platform password (required even for Google users).
+- **Admin approval gate**: participants see “Waiting for admin approval” until approved.
+- **One email = one role** enforced via `profiles.email` unique.
+- **Team rules** enforced in DB:
+  - One team per user per event.
+  - Team locks automatically when all invites accept.
+- **Deadline rules** enforced in RLS:
+  - Registration blocked after `registration_deadline`.
+  - Submission edits blocked after `submission_deadline`.
+- **Judge access locked** until after submission deadline.

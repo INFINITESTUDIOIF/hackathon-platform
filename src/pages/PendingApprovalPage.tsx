@@ -5,12 +5,12 @@ import { useApp } from '../context/AppContext'
 
 export function PendingApprovalPage() {
   const navigate = useNavigate()
-  const { profile, logout, supabaseMode, useApiBackend } = useApp()
+  const { profile, signOut } = useApp()
 
   useEffect(() => {
-    if ((!supabaseMode && !useApiBackend) || !profile) return
-    if (profile.approval_status === 'approved') navigate('/', { replace: true })
-  }, [supabaseMode, useApiBackend, profile, navigate])
+    if (!profile) return
+    if (profile.is_approved) navigate('/', { replace: true })
+  }, [profile, navigate])
 
   return (
     <div className="mx-auto flex min-h-[70vh] max-w-lg flex-col items-center justify-center px-4 py-16 text-center">
@@ -26,7 +26,7 @@ export function PendingApprovalPage() {
         </p>
         <button
           type="button"
-          onClick={() => void logout()}
+          onClick={() => void signOut()}
           className="mt-8 text-sm font-medium text-violet-400 hover:text-violet-300"
         >
           Sign out

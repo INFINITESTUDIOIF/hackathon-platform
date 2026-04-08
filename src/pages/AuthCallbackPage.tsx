@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
-import { apiMode } from '../config/api'
-import { mongoSupabaseOAuthSync } from '../services/mongoApi'
 import { Button } from '../components/ui/Button'
 
 function humanizeAuthError(msg: string) {
@@ -37,6 +35,7 @@ export function AuthCallbackPage() {
         setError(humanizeAuthError(decodeURIComponent(qErr)))
         return
       }
+      const next = url.searchParams.get('next') || '/'
 
       const {
         data: { session },
@@ -46,25 +45,13 @@ export function AuthCallbackPage() {
         setError(humanizeAuthError(sessErr.message || 'Could not read Google session.'))
         return
       }
-      if (apiMode && session?.access_token) {
-        try {
-          await mongoSupabaseOAuthSync(session.access_token)
-        } catch (err) {
-          const message =
-            err instanceof Error ? err.message : 'Could not complete server sign-in.'
-          setError(humanizeAuthError(message))
-          return
-        }
-        window.location.assign('/')
-        return
-      }
       if (!session) {
         setError(
           'Google login did not return a valid session. Please retry and check OAuth redirect settings.',
         )
         return
       }
-      navigate('/', { replace: true })
+      navigate(next, { replace: true })
     })()
   }, [navigate])
 

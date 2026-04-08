@@ -1,343 +1,203 @@
-import { Link, NavLink, useLocation } from 'react-router-dom'
-import { useEffect, useMemo, useState } from 'react'
-import {
-  BarChart3,
-  BellRing,
-  CalendarCog,
-  Gavel,
-  LayoutGrid,
-  LogOut,
-  Shield,
-  Sparkles,
-  Trophy,
-  Users,
-} from 'lucide-react'
-import clsx from 'clsx'
-import { isParticipantRole } from '../../data/mock'
+import { Link, useLocation } from 'react-router-dom'
 import { useApp } from '../../context/AppContext'
-import { Badge } from '../ui/Badge'
 import { FloatingAppFrame } from './FloatingAppFrame'
-import { Button } from '../ui/Button'
-import { mongoSetPassword } from '../../services/mongoApi'
-
-const navJudge = [
-  { to: '/judge/dashboard', label: 'Dashboard', icon: LayoutGrid },
-  { to: '/judge/feed', label: 'Projects', icon: BarChart3 },
-  { to: '/leaderboard', label: 'Leaderboard', icon: Trophy },
-]
-
-const navAdmin = [
-  { to: '/admin', label: 'Dashboard', icon: Shield },
-  { to: '/admin/event-setup', label: 'Event setup', icon: CalendarCog },
-  { to: '/leaderboard', label: 'Leaderboard', icon: Trophy },
-]
-
-const navTeam = [
-  { to: '/team', label: 'Dashboard', icon: Users },
-  { to: '/leaderboard', label: 'Leaderboard', icon: Trophy },
-]
-
-function ConfettiBurst() {
-  const pieces = Array.from({ length: 52 }, (_, i) => ({
-    id: i,
-    left: `${(i * 17 + 7) % 96}%`,
-    delay: `${(i % 10) * 0.06}s`,
-    bg: ['#a78bfa', '#f472b6', '#22d3ee', '#fbbf24', '#34d399', '#fb7185'][
-      i % 6
-    ],
-  }))
-  return (
-    <div
-      className="pointer-events-none fixed inset-0 z-[85] overflow-hidden"
-      aria-hidden
-    >
-      {pieces.map((p) => (
-        <span
-          key={p.id}
-          className="hackathon-confetti-piece"
-          style={{
-            left: p.left,
-            top: '-8vh',
-            animationDelay: p.delay,
-            backgroundColor: p.bg,
-          }}
-        />
-      ))}
-    </div>
-  )
-}
+import { LayoutDashboard, ShieldCheck, UserCircle, LogOut, Trophy, CheckCircle2, FileText } from 'lucide-react'
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const {
-    role,
-    authenticated,
-    logout,
-    winnerAnnouncedAt,
-    profile,
-    useApiBackend,
-    signInWithGoogle,
-    refreshProfile,
-  } = useApp()
-  const [party, setParty] = useState(false)
-  const [winnerToastOpen, setWinnerToastOpen] = useState(false)
-  const [setupOpen, setSetupOpen] = useState(false)
-  const [lastWinnerAtSeen, setLastWinnerAtSeen] = useState<string | null>(null)
-  const [setupPass, setSetupPass] = useState('')
-  const [setupName, setSetupName] = useState('')
-  const [setupBusy, setSetupBusy] = useState(false)
-  const [setupErr, setSetupErr] = useState<string | null>(null)
-
-  useEffect(() => {
-    const onAnnounce = () => {
-      setParty(true)
-      window.setTimeout(() => setParty(false), 2600)
-      setWinnerToastOpen(true)
-      window.setTimeout(() => setWinnerToastOpen(false), 3000)
-    }
-    window.addEventListener('hackathon:winners-announced', onAnnounce)
-    return () =>
-      window.removeEventListener('hackathon:winners-announced', onAnnounce)
-  }, [])
-
-  useEffect(() => {
-    if (!winnerAnnouncedAt) return
-    if (winnerAnnouncedAt === lastWinnerAtSeen) return
-    setLastWinnerAtSeen(winnerAnnouncedAt)
-    setWinnerToastOpen(true)
-    window.setTimeout(() => setWinnerToastOpen(false), 3000)
-  }, [winnerAnnouncedAt, lastWinnerAtSeen])
-
+  const { session, profile, signOut } = useApp()
   const loc = useLocation()
   const isAuth = loc.pathname.startsWith('/auth')
+  const isOnboarding = loc.pathname.startsWith('/onboarding')
 
-  if (!authenticated || isAuth) {
-    return <>{children}</>
+  if (!session || isAuth || isOnboarding) return <>{children}</>
+
+  const isMainAdmin = profile?.role === 'main_admin'
+  const currentRole = profile?.role ?? '—'
+
+  const getActivePanel = () => {
+    if (loc.pathname.startsWith('/admin')) return 'admin'
+    if (loc.pathname.startsWith('/judge')) return 'judge'
+    if (loc.pathname.startsWith('/dashboard')) return 'user'
+    return 'none'
   }
 
-  const items =
-    role === 'admin' ? navAdmin : isParticipantRole(role) ? navTeam : navJudge
+  const activePanel = getActivePanel()
 
-  const needsSetup = useMemo(() => {
-    if (!useApiBackend) return false
-    if (!profile) return false
-    return Boolean(profile.needs_profile_setup)
-  }, [useApiBackend, profile])
-
-  useEffect(() => {
-    if (!needsSetup) {
-      setSetupOpen(false)
-      setSetupErr(null)
-      setSetupBusy(false)
-      return
-    }
-    setSetupOpen(true)
-  }, [needsSetup])
+  const home =
+    profile?.role === 'admin' || profile?.role === 'main_admin'
+      ? '/admin'
+      : profile?.role === 'judge'
+        ? '/judge'
+        : '/dashboard'
 
   return (
     <FloatingAppFrame>
-      <div className="flex min-h-0 min-h-full flex-col">
-        <header className="sticky top-0 z-50 border-b border-white/[0.06] glass">
-          <div className="mx-auto flex h-14 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6">
-            <Link
-              to={
-                role === 'admin'
-                  ? '/admin'
-                  : isParticipantRole(role)
-                    ? '/team'
-                    : '/judge/dashboard'
-              }
-              className="flex items-center gap-2 font-semibold tracking-tight text-zinc-100"
-            >
-              <span className="flex h-8 w-8 items-center justify-center rounded-xl gradient-accent text-white shadow-md shadow-violet-900/40">
-                <Gavel className="h-4 w-4" aria-hidden />
-              </span>
-              <span className="hidden sm:inline">Jury</span>
-            </Link>
-
-            <nav className="hidden flex-1 items-center justify-center gap-0.5 sm:flex sm:gap-1">
-              {items.map(({ to, label, icon: Icon }) => (
-                <NavLink
-                  key={to}
-                  to={to}
-                  className={({ isActive }) =>
-                    clsx(
-                      'flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition-colors',
-                      isActive
-                        ? 'bg-zinc-800/90 text-zinc-100 shadow-sm ring-1 ring-white/10'
-                        : 'text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-200',
-                    )
-                  }
-                >
-                  <Icon className="h-4 w-4 shrink-0 opacity-90" aria-hidden />
-                  <span className="hidden md:inline">{label}</span>
-                </NavLink>
-              ))}
-            </nav>
-
-            <div className="flex items-center gap-2">
-              <Badge variant="muted" className="hidden capitalize lg:inline-flex">
-                {role ?? 'guest'}
-              </Badge>
-              <button
-                type="button"
-                className="rounded-lg p-2 text-zinc-400 transition-all duration-200 hover:bg-zinc-800 hover:text-zinc-100 hover:scale-105 active:scale-95"
-                title="Sign out"
-                onClick={logout}
+      <div className="flex h-full flex-col overflow-hidden">
+        {/* Main Admin Panel Switcher Slider (Top) */}
+        {isMainAdmin && (
+          <div className="flex-none flex h-16 w-full items-center justify-center border-b border-white/10 bg-[#090b1f]/80 backdrop-blur-xl px-6 z-[60]">
+            <div className="relative flex w-full max-w-md items-center gap-1 rounded-2xl bg-white/[0.03] p-1 border border-white/5">
+              {/* Sliding indicator */}
+              <div 
+                className="absolute h-[calc(100%-8px)] rounded-xl gradient-accent shadow-[0_0_20px_rgba(139,92,246,0.4)] transition-all duration-500 ease-out"
+                style={{
+                  width: 'calc(33.33% - 4px)',
+                  left: activePanel === 'admin' ? '4px' : activePanel === 'judge' ? '33.33%' : activePanel === 'user' ? '66.66%' : '4px',
+                  opacity: activePanel === 'none' ? 0 : 1
+                }}
+              />
+              
+              <Link
+                to="/admin"
+                className={`relative z-10 flex flex-1 items-center justify-center gap-2 py-2 text-[11px] font-black uppercase tracking-wider transition-colors duration-300 ${activePanel === 'admin' ? 'text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
               >
-                <LogOut className="h-4 w-4" aria-hidden />
+                <ShieldCheck className="h-3.5 w-3.5" />
+                Admin
+              </Link>
+              <Link
+                to="/judge"
+                className={`relative z-10 flex flex-1 items-center justify-center gap-2 py-2 text-[11px] font-black uppercase tracking-wider transition-colors duration-300 ${activePanel === 'judge' ? 'text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+              >
+                <Trophy className="h-3.5 w-3.5" />
+                Judge
+              </Link>
+              <Link
+                to="/dashboard"
+                className={`relative z-10 flex flex-1 items-center justify-center gap-2 py-2 text-[11px] font-black uppercase tracking-wider transition-colors duration-300 ${activePanel === 'user' ? 'text-white' : 'text-zinc-500 hover:text-zinc-300'}`}
+              >
+                <UserCircle className="h-3.5 w-3.5" />
+                User
+              </Link>
+            </div>
+            
+            {/* User Profile Summary in Top Bar */}
+            <div className="absolute right-6 flex items-center gap-4">
+              <div className="hidden flex-col items-end sm:flex">
+                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-violet-400">Main Admin</span>
+                <span className="text-[11px] font-bold text-zinc-300">{profile?.email}</span>
+              </div>
+              <button 
+                onClick={() => void signOut()}
+                className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/5 border border-white/10 text-zinc-400 hover:text-red-400 hover:bg-red-500/10 hover:border-red-500/20 transition-all"
+              >
+                <LogOut className="h-4 w-4" />
               </button>
             </div>
           </div>
-        </header>
-
-        <main className="min-h-0 flex-1 overflow-auto">{children}</main>
-
-        {party && <ConfettiBurst />}
-
-        {winnerToastOpen && (
-          <div className="fixed right-4 top-16 z-[90] w-[min(92vw,420px)]">
-            <div className="hackathon-winner-banner relative overflow-hidden rounded-2xl border border-violet-400/35 bg-gradient-to-br from-violet-950/95 via-zinc-950/98 to-zinc-950 p-4 shadow-[0_0_44px_rgba(124,58,237,0.45)] backdrop-blur-md">
-              <div className="pointer-events-none absolute -right-6 -top-6 h-24 w-24 rounded-full bg-violet-500/25 blur-2xl" />
-              <p className="flex items-center gap-2 pr-8 text-sm font-bold uppercase tracking-wider text-violet-200">
-                <Sparkles className="h-4 w-4 text-amber-300" />
-                Winners announced
-              </p>
-              <p className="mt-2 flex items-start gap-2 text-sm leading-relaxed text-zinc-200">
-                <BellRing className="mt-0.5 h-4 w-4 shrink-0 text-violet-400" />
-                Results are live on the leaderboard.
-              </p>
-            </div>
-          </div>
         )}
 
-        {setupOpen && needsSetup && (
-          <div className="fixed inset-0 z-[95] grid place-items-center bg-black/70 p-4 backdrop-blur-sm">
-            <div className="w-[min(92vw,520px)] rounded-3xl border border-white/10 bg-zinc-950/80 p-6 shadow-[0_0_40px_rgba(124,58,237,0.25)]">
-              <p className="text-sm font-bold uppercase tracking-wider text-violet-200">
-                Finish account setup
-              </p>
-              <p className="mt-2 text-sm text-zinc-300">
-                Choose a unique username and create your app password to finish signup.
-              </p>
-
-              <div className="mt-5 space-y-3">
-                <label className="block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400">
-                  Username
-                  <input
-                    value={setupName}
-                    onChange={(e) => setSetupName(e.target.value)}
-                    className="input-dark mt-2 w-full rounded-xl border-white/10 bg-zinc-950/70"
-                    placeholder="your_handle"
-                    autoComplete="username"
-                    disabled={setupBusy}
-                  />
-                </label>
-                <label className="block text-xs font-semibold uppercase tracking-[0.18em] text-zinc-400">
-                  App password
-                  <input
-                    type="password"
-                    value={setupPass}
-                    onChange={(e) => setSetupPass(e.target.value)}
-                    className="input-dark mt-2 w-full rounded-xl border-white/10 bg-zinc-950/70"
-                    placeholder="••••••••"
-                    disabled={setupBusy}
-                  />
-                </label>
-                <Button
-                  size="sm"
-                  className="w-full rounded-xl"
-                  disabled={
-                    setupBusy ||
-                    setupPass.length < 6 ||
-                    !/^[a-z0-9_]{3,24}$/.test(setupName.trim().toLowerCase())
-                  }
-                  onClick={() => {
-                    void (async () => {
-                      setSetupErr(null)
-                      setSetupBusy(true)
-                      try {
-                        await mongoSetPassword({
-                          password: setupPass,
-                          username: setupName.trim().toLowerCase(),
-                        })
-                        setSetupPass('')
-                        setSetupName('')
-                        await refreshProfile()
-                      } catch (e) {
-                        setSetupErr(
-                          e instanceof Error ? e.message : 'Could not set password.',
-                        )
-                      } finally {
-                        setSetupBusy(false)
-                      }
-                    })()
-                  }}
-                >
-                  {setupBusy ? 'Saving…' : 'Save and continue'}
-                </Button>
-              </div>
-
-              {profile?.google_verified === false && (
-                <div className="mt-5">
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    className="w-full rounded-xl"
-                    disabled={setupBusy}
-                    onClick={() => void signInWithGoogle()}
-                  >
-                    Link Google account
-                  </Button>
-                  <p className="mt-2 text-xs text-zinc-500">
-                    Optional: link Google to the same email you used to sign in.
-                  </p>
-                </div>
-              )}
-
-              {setupErr && (
-                <p
-                  className="mt-4 rounded-xl border border-red-500/40 bg-red-950/50 px-3 py-2 text-sm text-red-300"
-                  role="alert"
-                >
-                  {setupErr}
-                </p>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Mobile bottom navigation (native-feel thumb zones) */}
-        <nav className="sm:hidden border-t border-white/[0.06] bg-zinc-950/55 backdrop-blur-md">
-          <div className="mx-auto grid max-w-7xl grid-cols-3 px-2 py-2">
-            {items.map(({ to, label, icon: Icon }) => (
-              <NavLink
-                key={to}
-                to={to}
-                className={({ isActive }) =>
-                  clsx(
-                    'group flex flex-col items-center justify-center rounded-xl px-2 py-2 transition-all duration-200 ease-in-out',
-                    isActive
-                      ? 'bg-white/5 text-zinc-100 ring-1 ring-white/10 shadow-[0_0_20px_rgba(124,58,237,0.25)] is-active'
-                      : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-200',
-                  )
-                }
+        <div className="flex flex-1 flex-col lg:flex-row overflow-hidden">
+          {/* Left Sidebar for Navigation */}
+          <aside className="w-full lg:w-72 sidebar-glass flex flex-col shrink-0 overflow-hidden">
+            <div className="p-8">
+              <Link
+                to={home}
+                className="flex items-center gap-3.5 font-black tracking-tighter text-white text-2xl group"
               >
-                <Icon
-                  className="h-5 w-5 opacity-95 transition-transform duration-200 group-[.is-active]:scale-110 group-[.is-active]:drop-shadow-[0_0_12px_rgba(124,58,237,0.35)] group-[.is-active]:text-violet-400"
-                  aria-hidden
-                />
-                <span className="mt-1 text-[11px] font-medium leading-none">
-                  {label}
+                <span className="flex h-11 w-11 items-center justify-center rounded-2xl gradient-accent text-white shadow-[0_0_20px_rgba(139,92,246,0.3)] group-hover:scale-110 transition-transform duration-300">
+                  A
                 </span>
-              </NavLink>
-            ))}
-          </div>
-        </nav>
+                <span className="bg-gradient-to-r from-white to-white/60 bg-clip-text text-transparent">AEVINITE</span>
+              </Link>
+            </div>
 
-        <footer className="hidden border-t border-white/[0.06] bg-zinc-950/50 py-5 text-center text-xs text-zinc-500 sm:block">
-          <p>Jury — hackathon judging. Built for clarity under pressure.</p>
-        </footer>
+            <nav className="flex-1 px-6 space-y-1.5 overflow-y-auto custom-scrollbar">
+              <p className="px-4 text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500 mb-6 mt-2">Primary Controls</p>
+              
+              {/* Context-aware primary links */}
+              {profile?.role === 'admin' && (
+                <Link 
+                  to="/admin" 
+                  className={`relative flex items-center gap-3.5 px-4 py-3.5 rounded-2xl transition-all duration-300 font-bold text-[13px] ${loc.pathname.startsWith('/admin') ? 'nav-link-active' : 'text-zinc-500 hover:text-zinc-200 hover:bg-white/[0.03]'}`}
+                >
+                  <ShieldCheck className={`w-5 h-5 ${loc.pathname.startsWith('/admin') ? 'text-violet-400' : ''}`} />
+                  Admin Dashboard
+                </Link>
+              )}
+
+              {isMainAdmin && (
+                <Link 
+                  to={activePanel === 'admin' ? '/admin' : activePanel === 'judge' ? '/judge' : '/dashboard'}
+                  className="relative flex items-center gap-3.5 px-4 py-3.5 rounded-2xl transition-all duration-300 font-bold text-[13px] nav-link-active"
+                >
+                  <LayoutDashboard className="w-5 h-5 text-violet-400" />
+                  {activePanel === 'admin' ? 'Admin View' : activePanel === 'judge' ? 'Judge View' : 'User View'}
+                </Link>
+              )}
+
+              {profile?.role === 'judge' && !isMainAdmin && (
+                <Link 
+                  to="/judge" 
+                  className={`relative flex items-center gap-3.5 px-4 py-3.5 rounded-2xl transition-all duration-300 font-bold text-[13px] ${loc.pathname.startsWith('/judge') ? 'nav-link-active' : 'text-zinc-500 hover:text-zinc-200 hover:bg-white/[0.03]'}`}
+                >
+                  <ShieldCheck className={`w-5 h-5 ${loc.pathname.startsWith('/judge') ? 'text-violet-400' : ''}`} />
+                  Judge Panel
+                </Link>
+              )}
+
+              {profile?.role === 'user' && !isMainAdmin && (
+                <>
+                  <Link 
+                    to="/dashboard" 
+                    className={`relative flex items-center gap-3.5 px-4 py-3.5 rounded-2xl transition-all duration-300 font-bold text-[13px] ${loc.pathname === '/dashboard' ? 'nav-link-active' : 'text-zinc-500 hover:text-zinc-200 hover:bg-white/[0.03]'}`}
+                  >
+                    <LayoutDashboard className={`w-5 h-5 ${loc.pathname === '/dashboard' ? 'text-violet-400' : ''}`} />
+                    User Dashboard
+                  </Link>
+                  <Link 
+                    to="/dashboard?tab=completed" 
+                    className={`relative flex items-center gap-3.5 px-4 py-3.5 rounded-2xl transition-all duration-300 font-bold text-[13px] ${loc.search.includes('tab=completed') ? 'nav-link-active' : 'text-zinc-500 hover:text-zinc-200 hover:bg-white/[0.03]'}`}
+                  >
+                    <Trophy className={`w-5 h-5 ${loc.search.includes('tab=completed') ? 'text-violet-400' : ''}`} />
+                    Hackathon Results
+                  </Link>
+                </>
+              )}
+
+              <div className="pt-8">
+                <p className="px-4 text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500 mb-6">Quick Links</p>
+                <Link to="/" className="flex items-center gap-3.5 px-4 py-3 rounded-2xl text-zinc-500 hover:text-zinc-200 hover:bg-white/[0.03] transition-all font-bold text-[13px]">
+                  <FileText className="w-5 h-5" />
+                  Guidelines
+                </Link>
+                <Link to="/" className="flex items-center gap-3.5 px-4 py-3 rounded-2xl text-zinc-500 hover:text-zinc-200 hover:bg-white/[0.03] transition-all font-bold text-[13px]">
+                  <CheckCircle2 className="w-5 h-5" />
+                  Support
+                </Link>
+              </div>
+            </nav>
+
+            <div className="p-6 mt-auto">
+              <div className="bg-white/[0.03] border border-white/[0.05] rounded-[24px] p-4 mb-4">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="w-11 h-11 rounded-2xl gradient-accent p-[1px]">
+                    <div className="w-full h-full rounded-2xl bg-zinc-900 flex items-center justify-center text-sm font-black text-white">
+                      {profile?.username?.substring(0, 2).toUpperCase() ?? profile?.email?.substring(0, 2).toUpperCase()}
+                    </div>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[13px] font-black text-white truncate">@{profile?.username ?? 'user'}</p>
+                    <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider mt-0.5">{currentRole.replace('_', ' ')}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => void signOut()}
+                  className="w-full flex items-center justify-center gap-2.5 px-4 py-2.5 rounded-xl bg-zinc-800/50 hover:bg-red-500/10 text-zinc-400 hover:text-red-400 border border-white/[0.05] transition-all duration-300 font-bold text-[12px]"
+                >
+                  <LogOut className="w-4 h-4" />
+                  Logout
+                </button>
+              </div>
+            </div>
+          </aside>
+
+          <main className="flex-1 overflow-auto bg-[#050508]/50 relative">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_-20%,rgba(139,92,246,0.08),transparent_50%)] pointer-events-none" />
+            <div className="relative z-10">{children}</div>
+          </main>
+        </div>
       </div>
     </FloatingAppFrame>
   )
 }
+

@@ -8,6 +8,6 @@
    - **Site URL**: `http://localhost:5173` during dev; your production URL for deploy.
    - **Redirect URLs**: add `http://localhost:5173/**` and `https://YOUR_DOMAIN/**`.
 6. Copy **Project URL** and **anon public** key into `.env` as `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (this app uses Vite, not Next — use the `VITE_` prefix).
-7. Set `VITE_ADMIN_EMAILS` to your Google account email so the first login becomes an approved admin.
+7. Set `VITE_MAIN_ADMIN_EMAILS` to your Google account email so the first login becomes a `main_admin`.
 
-If the trigger fails to create (older Postgres), try changing the last line to `EXECUTE PROCEDURE public.profile_set_role_from_promotion();` or ask Supabase AI to fix the trigger syntax for your DB version.
+Then run the app and sign in. Participants will see **Waiting for admin approval** until approved in `/admin`.
